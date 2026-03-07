@@ -14,3 +14,9 @@ __pycache__/
 .pytest_cache/
 venv/
 *.egg-info/
+/copilot.data.migration.ask2agent.xml
+/misc.xml
+/modules.xml
+/OS-Kernel.iml
+/inspectionProfiles/profiles_settings.xml
+/vcs.xml
