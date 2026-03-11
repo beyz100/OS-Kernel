@@ -10,7 +10,14 @@ class FIFOScheduler:
         process.state = ProcessState.READY
         self.ready_queue.append(process)
 
+    def unblock_process(self, process: Process):
+        process.state = ProcessState.READY
+        self.ready_queue.append(process)
+
     def step(self):
+        if self.current_process and self.current_process.state == ProcessState.BLOCKED:
+            self.current_process = None 
+
         if self.current_process is None or self.current_process.state == ProcessState.TERMINATED:
             if not self.ready_queue:
                 return None  
