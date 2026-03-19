@@ -35,3 +35,22 @@ class Mutex:
             self.locked = False
             self.owner_pid = None
             return None
+        
+        
+
+class ConditionVariable:
+    def __init__(self, name: str):
+        self.name = name
+        self.wait_queue = []
+
+    def wait(self, pid: int, process_name: str):
+        if pid not in self.wait_queue:
+            self.wait_queue.append(pid)
+        OSLogger.log("Sync", f"Condition '{self.name}': {process_name} (PID={pid}) is waiting.")
+
+    def signal(self) -> int | None:
+        if self.wait_queue:
+            woken_pid = self.wait_queue.pop(0)
+            OSLogger.log("Sync", f"Condition '{self.name}': Signaled PID={woken_pid} to wake up.")
+            return woken_pid
+        return None
