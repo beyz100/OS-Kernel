@@ -32,3 +32,32 @@ def test_fifo_scheduler():
     assert active_process.pid == 2
     assert p2.state == ProcessState.RUNNING
     assert p2.remaining_time == 1
+
+def test_block_unblock_process():
+    scheduler = FIFOScheduler()
+    p1 = Process(pid=1, arrival_time=0, burst_time=3)
+    
+    scheduler.add_process(p1)
+    assert p1.state == ProcessState.READY
+    
+    # Process gets scheduled
+    scheduler.step()
+    assert p1.state == ProcessState.RUNNING
+    
+    # Block the process
+    scheduler.block_process(p1)
+    assert p1.state == ProcessState.WAITING
+    assert scheduler.current_process == p1
+    
+    # Next step should release the CPU since current_process is WAITING
+    scheduler.step()
+    assert scheduler.current_process is None
+    
+    # Unblock the process
+    scheduler.unblock_process(p1)
+    assert p1.state == ProcessState.READY
+    
+    # Process gets scheduled again
+    scheduler.step()
+    assert p1.state == ProcessState.RUNNING
+    assert scheduler.current_process == p1

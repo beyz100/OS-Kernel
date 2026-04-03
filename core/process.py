@@ -4,7 +4,7 @@ class ProcessState(Enum):
     NEW = "NEW"            
     READY = "READY"         
     RUNNING = "RUNNING"     
-    BLOCKED = "BLOCKED"     
+    WAITING = "WAITING"     
     TERMINATED = "TERMINATED" 
 
 class Process:

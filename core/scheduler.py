@@ -12,14 +12,20 @@ class FIFOScheduler:
         self.ready_queue.append(process)
         OSLogger.log("Scheduler", f"Process PID={process.pid} moved to READY queue.", tick)
 
+    def block_process(self, process: Process, tick: int | None = None):
+        process.state = ProcessState.WAITING
+        if process in self.ready_queue:
+            self.ready_queue.remove(process)
+        OSLogger.log("Scheduler", f"Process PID={process.pid} blocked and moved to WAITING.", tick)
+
     def unblock_process(self, process: Process, tick: int | None = None):
         process.state = ProcessState.READY
         self.ready_queue.append(process)
         OSLogger.log("Scheduler", f"Process PID={process.pid} unblocked and re-queued.", tick)
 
     def step(self, tick: int | None = None):
-        if self.current_process and self.current_process.state == ProcessState.BLOCKED:
-            OSLogger.log("Scheduler", f"Process PID={self.current_process.pid} is BLOCKED. CPU released.", tick)
+        if self.current_process and self.current_process.state == ProcessState.WAITING:
+            OSLogger.log("Scheduler", f"Process PID={self.current_process.pid} is WAITING. CPU released.", tick)
             self.current_process = None 
 
         if self.current_process is None or self.current_process.state == ProcessState.TERMINATED:
