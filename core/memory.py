@@ -3,10 +3,11 @@ from utils.logger import OSLogger
 
 
 class PageFaultTrap(Exception):
-    def __init__(self, pid: int, virtual_address: int):
+    def __init__(self, pid: int, virtual_address: int, page_number: int):
         self.pid = pid
         self.virtual_address = virtual_address
-        super().__init__(f"PAGE FAULT: PID {pid}, Virtual Address {virtual_address}")
+        self.page_number = page_number
+        super().__init__(f"PAGE FAULT: PID={pid}, VA={virtual_address}, Page={page_number}")
 
 
 class PageTableEntry:
@@ -67,20 +68,20 @@ class MemoryManager:
     def translate_address(self, pid: int, virtual_address: int) -> int | None:
         if pid not in self.page_tables:
             OSLogger.log("Memory", f"Translation ERROR: PID {pid} not found in page tables")
-            return None
+            raise PageFaultTrap(pid, virtual_address, -1)
         
         page_number = virtual_address // self.page_size
         offset = virtual_address % self.page_size
         
         if page_number >= len(self.page_tables[pid]):
-            OSLogger.log("Memory", f"Translation ERROR: Page {page_number} out of bounds for PID {pid}")
-            return None
+            OSLogger.log("Memory", f"PAGE FAULT: Page {page_number} out of bounds for PID {pid}")
+            raise PageFaultTrap(pid, virtual_address, page_number)
         
         page_entry = self.page_tables[pid][page_number]
         
         if not page_entry.valid or page_entry.frame_number is None:
             OSLogger.log("Memory", f"PAGE FAULT: PID {pid}, Virtual Address {virtual_address}")
-            raise PageFaultTrap(pid, virtual_address)
+            raise PageFaultTrap(pid, virtual_address, page_number)
         
         page_entry.accessed = True
         

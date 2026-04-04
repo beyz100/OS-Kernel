@@ -21,8 +21,11 @@ def run_memory_scenario():
     OSLogger.log("System", f"PID 1 Allocation: {success}", clock.current_tick)
     clock.tick()
     
-    phys_addr = mem.translate_address(pid=1, virtual_address=5)
-    OSLogger.log("System", f"Virtual Address 5 -> Physical Address {phys_addr}", clock.current_tick)
+    try:
+        phys_addr = mem.translate_address(pid=1, virtual_address=5)
+        OSLogger.log("System", f"Virtual Address 5 -> Physical Address {phys_addr}", clock.current_tick)
+    except PageFaultTrap as fault:
+        OSLogger.log("System", f"TRAP: {fault}", clock.current_tick)
     clock.tick()
     
     mem.mark_dirty(pid=1, virtual_address=15)
@@ -35,6 +38,13 @@ def run_memory_scenario():
     
     stats = mem.get_memory_stats()
     OSLogger.log("System", f"Memory Stats: {stats['used_frames']}/{stats['total_frames']} frames used ({stats['utilization']:.1f}%)", clock.current_tick)
+    clock.tick()
+    
+    try:
+        phys_addr = mem.translate_address(pid=1, virtual_address=50)
+        OSLogger.log("System", f"Virtual Address 50 -> Physical Address {phys_addr}", clock.current_tick)
+    except PageFaultTrap as fault:
+        OSLogger.log("System", f"PAGE FAULT TRAP - PID: {fault.pid}, VA: {fault.virtual_address}, Page: {fault.page_number}", clock.current_tick)
     clock.tick()
     
     success = mem.deallocate(pid=1)
