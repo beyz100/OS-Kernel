@@ -2,12 +2,21 @@ import math
 from utils.logger import OSLogger
 
 
+class PageFaultTrap(Exception):
+    def __init__(self, pid: int, virtual_address: int):
+        self.pid = pid
+        self.virtual_address = virtual_address
+        super().__init__(f"PAGE FAULT: PID {pid}, Virtual Address {virtual_address}")
+
+
 class PageTableEntry:
     def __init__(self):
         self.frame_number = None  # Fiziksel frame numarası
         self.valid = False        # Sayfa hafızada mı?
         self.dirty = False        # Yazılı mı?
         self.accessed = False     # Erişildi mi?
+
+
 class MemoryManager:
 
     def __init__(self, total_memory: int = 1024, page_size: int = 16):
@@ -71,13 +80,33 @@ class MemoryManager:
         
         if not page_entry.valid or page_entry.frame_number is None:
             OSLogger.log("Memory", f"PAGE FAULT: PID {pid}, Virtual Address {virtual_address}")
-            return None
+            raise PageFaultTrap(pid, virtual_address)
         
         page_entry.accessed = True
         
         physical_address = page_entry.frame_number * self.page_size + offset
         
         return physical_address
+
+    def handle_page_fault(self, pid: int, virtual_address: int, tick: int | None = None) -> bool:
+        page_number = virtual_address // self.page_size
+        if pid not in self.page_tables or page_number >= len(self.page_tables[pid]):
+            return False
+            
+        page_entry = self.page_tables[pid][page_number]
+        
+        # Free frame bul
+        free_frame_idx = next((i for i, f in enumerate(self.frames) if f is None), None)
+        if free_frame_idx is None:
+            OSLogger.log("Memory", "Page Fault handling failed: No free frames.", tick)
+            return False
+            
+        self.frames[free_frame_idx] = pid
+        page_entry.frame_number = free_frame_idx
+        page_entry.valid = True
+        
+        OSLogger.log("Memory", f"PAGE FETCHED for PID {pid}, Virtual Address {virtual_address} -> Frame {free_frame_idx}", tick)
+        return True
     
     def mark_dirty(self, pid: int, virtual_address: int):
         if pid not in self.page_tables:

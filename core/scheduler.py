@@ -12,6 +12,11 @@ class FIFOScheduler:
         self.ready_queue.append(process)
         OSLogger.log("Scheduler", f"Process PID={process.pid} moved to READY queue.", tick)
 
+    def block_process(self, process: Process, tick: int | None = None):
+        if process.state == ProcessState.RUNNING:
+            process.state = ProcessState.BLOCKED
+            OSLogger.log("Scheduler", f"Process PID={process.pid} blocked.", tick)
+
     def unblock_process(self, process: Process, tick: int | None = None):
         process.state = ProcessState.READY
         self.ready_queue.append(process)

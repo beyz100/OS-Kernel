@@ -1,6 +1,6 @@
 from core.problems import BoundedBuffer
 from core.file_system import FileSystem
-from core.memory import MemoryManager
+from core.memory import MemoryManager, PageFaultTrap
 from core.process import Process
 from core.scheduler import FIFOScheduler
 from utils.clock import Clock
@@ -150,11 +150,67 @@ def run_integrated_baseline_scenario():
     memory.deallocate(pid=102, tick=clock.current_tick)
     OSLogger.log("System", "Integrated baseline scenario completed.", clock.current_tick)
 
+
+def run_cross_component_interaction():
+    print("\n" + "=" * 60)
+    print("  SCENARIO 5: CROSS-COMPONENT INTERACTION I (MEMORY + SCHEDULER)")
+    print("=" * 60)
+
+    clock = Clock()
+    scheduler = FIFOScheduler()
+    memory = MemoryManager(total_memory=64, page_size=8)
+    
+    p1 = Process(pid=201, arrival_time=0, burst_time=5)
+    scheduler.add_process(p1, clock.current_tick)
+    
+    # Simulate first process dispatch
+    scheduler.step(clock.current_tick)
+    clock.tick()
+    
+    # Process is now running, let's simulate memory allocation but swap out a page
+    memory.allocate(pid=201, memory_required=16, tick=clock.current_tick)
+    
+    # Simulate swapped out page
+    memory.page_tables[201][0].valid = False
+    memory.page_tables[201][0].frame_number = None
+    
+    # Running process tries to access memory
+    virtual_address = 0
+    OSLogger.log("Process", f"PID {p1.pid} requesting access to Virtual Address {virtual_address}", clock.current_tick)
+    
+    try:
+        phys_addr = memory.translate_address(pid=201, virtual_address=virtual_address)
+    except PageFaultTrap as e:
+        OSLogger.log("Kernel", "Caught PageFaultTrap, blocking process...", clock.current_tick)
+        scheduler.block_process(p1, clock.current_tick)
+        
+        # CPU steps (Process was blocked, CPU should be released)
+        scheduler.step(clock.current_tick)
+        clock.tick()
+        
+        # Kernel handles page fault behind the scenes
+        OSLogger.log("Kernel", "Fetching required page into physical memory...", clock.current_tick)
+        memory.handle_page_fault(pid=e.pid, virtual_address=e.virtual_address, tick=clock.current_tick)
+        clock.tick()
+        
+        # Unblock process
+        scheduler.unblock_process(p1, clock.current_tick)
+        
+        # Step scheduler again to dispatch it back
+        scheduler.step(clock.current_tick)
+        clock.tick()
+
+        # Retry memory access
+        OSLogger.log("Process", f"PID {p1.pid} retrying access to Virtual Address {virtual_address}", clock.current_tick)
+        phys_addr = memory.translate_address(pid=201, virtual_address=virtual_address)
+        OSLogger.log("Process", f"Access SUCCESS -> Physical Address {phys_addr}", clock.current_tick)
+
 if __name__ == "__main__":
     run_memory_scenario()
     run_filesystem_scenario()
     run_producer_consumer_scenario()
     run_integrated_baseline_scenario()
+    run_cross_component_interaction()
     
     print("\n" + "="*60)
     print("  ALL SCENARIOS COMPLETED SUCCESSFULLY.")
