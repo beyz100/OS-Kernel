@@ -26,7 +26,14 @@ class MemoryManager:
         self.total_frames = total_memory // page_size
         
         self.frames = [None] * self.total_frames
-        
+
+        self.replacement_pointer = 0
+
+        self.page_tables = {}
+        self.process_memory = {}
+
+        OSLogger.log("Memory", f"Initialized: {total_memory} bytes, {self.total_frames} frames, page_size={page_size}")
+
         self.page_tables = {}
         
         self.process_memory = {}
@@ -95,18 +102,30 @@ class MemoryManager:
             return False
             
         page_entry = self.page_tables[pid][page_number]
-        
-        # Free frame bul
-        free_frame_idx = next((i for i, f in enumerate(self.frames) if f is None), None)
-        if free_frame_idx is None:
-            OSLogger.log("Memory", "Page Fault handling failed: No free frames.", tick)
-            return False
-            
-        self.frames[free_frame_idx] = pid
-        page_entry.frame_number = free_frame_idx
+
+        target_frame_idx = next((i for i, f in enumerate(self.frames) if f is None), None)
+
+        if target_frame_idx is None:
+            target_frame_idx = self.replacement_pointer
+            victim_pid = self.frames[target_frame_idx]
+
+            if victim_pid is not None and victim_pid in self.page_tables:
+                for entry in self.page_tables[victim_pid]:
+                    if entry.frame_number == target_frame_idx:
+                        entry.valid = False
+                        entry.frame_number = None
+                        OSLogger.log("Memory", f"EVICTED: Frame {target_frame_idx} (PID {victim_pid}) for new page.",
+                                     tick)
+                        break
+
+            self.replacement_pointer = (self.replacement_pointer + 1) % self.total_frames
+
+        self.frames[target_frame_idx] = pid
+        page_entry.frame_number = target_frame_idx
         page_entry.valid = True
-        
-        OSLogger.log("Memory", f"PAGE FETCHED for PID {pid}, Virtual Address {virtual_address} -> Frame {free_frame_idx}", tick)
+
+        OSLogger.log("Memory",
+                     f"PAGE FETCHED for PID {pid}, Virtual Address {virtual_address} -> Frame {target_frame_idx}", tick)
         return True
     
     def mark_dirty(self, pid: int, virtual_address: int):
