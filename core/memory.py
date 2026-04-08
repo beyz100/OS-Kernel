@@ -12,10 +12,10 @@ class PageFaultTrap(Exception):
 
 class PageTableEntry:
     def __init__(self):
-        self.frame_number = None  # Fiziksel frame numarası
-        self.valid = False        # Sayfa hafızada mı?
-        self.dirty = False        # Yazılı mı?
-        self.accessed = False     # Erişildi mi?
+        self.frame_number = None
+        self.valid = False
+        self.dirty = False
+        self.accessed = False
 
 
 class MemoryManager:
