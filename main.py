@@ -109,18 +109,22 @@ def run_producer_consumer_scenario():
     clock = Clock()
     buffer = BoundedBuffer(capacity=2)
     
+    scheduler = FIFOScheduler()
+    p1 = Process(pid=1, arrival_time=0, burst_time=5)
+    p2 = Process(pid=2, arrival_time=0, burst_time=5)
+    
     OSLogger.log("System", "Starting Producer-Consumer interaction...", clock.current_tick)
     
-    buffer.produce(pid=1, process_name="Sensor_O2", item="O2_Level=21%")
+    buffer.produce(process=p1, item="O2_Level=21%", scheduler=scheduler, tick=clock.current_tick)
     clock.tick()
     
-    buffer.produce(pid=1, process_name="Sensor_O2", item="O2_Level=20%")
+    buffer.produce(process=p1, item="O2_Level=20%", scheduler=scheduler, tick=clock.current_tick)
     clock.tick()
     
-    buffer.produce(pid=1, process_name="Sensor_O2", item="O2_Level=19%")
+    buffer.produce(process=p1, item="O2_Level=19%", scheduler=scheduler, tick=clock.current_tick)
     clock.tick()
     
-    buffer.consume(pid=2, process_name="DataLogger")
+    buffer.consume(process=p2, scheduler=scheduler, tick=clock.current_tick)
     clock.tick()
 
 
@@ -148,8 +152,8 @@ def run_integrated_baseline_scenario():
     fs.write("integrated.log", "BootOK ", "Kernel")
     fs.read("integrated.log", "KernelMonitor")
 
-    buffer.produce(pid=101, process_name="P101", item="msg-1")
-    buffer.consume(pid=102, process_name="P102")
+    buffer.produce(process=p1, item="msg-1", scheduler=scheduler, tick=clock.current_tick)
+    buffer.consume(process=p2, scheduler=scheduler, tick=clock.current_tick)
 
     # Run scheduler ticks while logging a unified timeline.
     for _ in range(4):

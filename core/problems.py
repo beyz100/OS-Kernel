@@ -10,39 +10,39 @@ class BoundedBuffer:
         self.not_full = ConditionVariable("NotFull")
         self.not_empty = ConditionVariable("NotEmpty")
 
-    def produce(self, pid: int, process_name: str, item: str) -> str:
-        if not self.mutex.acquire(pid, process_name):
+    def produce(self, process, item: str, scheduler=None, tick: int | None = None) -> str:
+        if not self.mutex.acquire(process, scheduler, tick):
             return "need_lock"
 
         if len(self.buffer) >= self.capacity:
-            OSLogger.log("Challenge", f"Buffer FULL! {process_name} must wait.")
-            self.not_full.wait(pid, process_name)
-            self.mutex.release(pid, process_name)
+            OSLogger.log("Challenge", f"Buffer FULL! PID={process.pid} must wait.")
+            self.not_full.wait(process, scheduler, tick)
+            self.mutex.release(process, scheduler, tick)
             return "buffer_full"
 
         self.buffer.append(item)
-        OSLogger.log("Challenge", f"PRODUCED: {process_name} -> '{item}' (Buffer: {len(self.buffer)}/{self.capacity})")
+        OSLogger.log("Challenge", f"PRODUCED: PID={process.pid} -> '{item}' (Buffer: {len(self.buffer)}/{self.capacity})")
         
-        woken_pid = self.not_empty.signal()
+        woken_process = self.not_empty.signal(scheduler, tick)
         
-        self.mutex.release(pid, process_name)
-        return "ok", woken_pid
+        self.mutex.release(process, scheduler, tick)
+        return "ok"
 
-    def consume(self, pid: int, process_name: str):
+    def consume(self, process, scheduler=None, tick: int | None = None):
 
-        if not self.mutex.acquire(pid, process_name):
-            return "need_lock", None, None
+        if not self.mutex.acquire(process, scheduler, tick):
+            return "need_lock", None
 
         if len(self.buffer) == 0:
-            OSLogger.log("Challenge", f"Buffer EMPTY! {process_name} must wait.")
-            self.not_empty.wait(pid, process_name)
-            self.mutex.release(pid, process_name)
-            return "buffer_empty", None, None
+            OSLogger.log("Challenge", f"Buffer EMPTY! PID={process.pid} must wait.")
+            self.not_empty.wait(process, scheduler, tick)
+            self.mutex.release(process, scheduler, tick)
+            return "buffer_empty", None
 
         item = self.buffer.pop(0)
-        OSLogger.log("Challenge", f"CONSUMED: {process_name} <- '{item}' (Buffer: {len(self.buffer)}/{self.capacity})")
+        OSLogger.log("Challenge", f"CONSUMED: PID={process.pid} <- '{item}' (Buffer: {len(self.buffer)}/{self.capacity})")
         
-        woken_pid = self.not_full.signal()
+        woken_process = self.not_full.signal(scheduler, tick)
         
-        self.mutex.release(pid, process_name)
-        return "ok", item, woken_pid
+        self.mutex.release(process, scheduler, tick)
+        return "ok", item
