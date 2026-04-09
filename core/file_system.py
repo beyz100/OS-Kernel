@@ -39,13 +39,17 @@ class FileSystem:
         OSLogger.log("FileSystem", f"Initialized with cache_size={cache_size}")
 
     def _manage_cache(self, filename: str) -> None:
-        if filename not in self.cache:
-            if len(self.cache) >= self.cache_size:
-                evicted = self.cache_queue.pop(0)
-                del self.cache[evicted]
-                OSLogger.log("FileSystem", f"Cache FULL! Evicted '{evicted}' (LRU)")
-
+        if filename in self.cache_queue:
+            self.cache_queue.remove(filename)
             self.cache_queue.append(filename)
+            return
+
+        if len(self.cache) >= self.cache_size:
+            evicted = self.cache_queue.pop(0)
+            del self.cache[evicted]
+            OSLogger.log("FileSystem", f"Cache FULL! Evicted '{evicted}' (LRU)")
+
+        self.cache_queue.append(filename)
 
     def _acquire_lock(self, filename: str, process_id: int) -> bool:
         if filename in self.file_locks and self.file_locks[filename] != process_id:
@@ -88,15 +92,22 @@ class FileSystem:
             return None, 0
 
         if filename in self.cache:
-            OSLogger.log("FileSystem", f"CACHE HIT! Read '{filename}' by {process_name} (Fast)")
-            return self.cache[filename], 0
+            data = self.cache[filename]
 
-        OSLogger.log("FileSystem", f"CACHE MISS! Read '{filename}' from disk by {process_name} (Slow)")
+            if filename in self.cache_queue:
+                self.cache_queue.remove(filename)
+            self.cache_queue.append(filename)
+
+            OSLogger.log("FileSystem", f"Cache HIT on '{filename}' by {process_name}")
+            return data, 0
+
+        data = self.files[filename].content
 
         self._manage_cache(filename)
-        self.cache[filename] = self.files[filename].content
+        self.cache[filename] = data
 
-        return self.files[filename].content, 2
+        OSLogger.log("FileSystem", f"Cache MISS on '{filename}' by {process_name}")
+        return data, 1
 
     def delete(self, filename: str, process_name: str) -> bool:
         if filename not in self.files:
