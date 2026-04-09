@@ -39,13 +39,17 @@ class FileSystem:
         OSLogger.log("FileSystem", f"Initialized with cache_size={cache_size}")
 
     def _manage_cache(self, filename: str) -> None:
-        if filename not in self.cache:
-            if len(self.cache) >= self.cache_size:
-                evicted = self.cache_queue.pop(0)
-                del self.cache[evicted]
-                OSLogger.log("FileSystem", f"Cache FULL! Evicted '{evicted}' (LRU)")
-
+        if filename in self.cache_queue:
+            self.cache_queue.remove(filename)
             self.cache_queue.append(filename)
+            return
+
+        if len(self.cache) >= self.cache_size:
+            evicted = self.cache_queue.pop(0)
+            del self.cache[evicted]
+            OSLogger.log("FileSystem", f"Cache FULL! Evicted '{evicted}' (LRU)")
+
+        self.cache_queue.append(filename)
 
     def _acquire_lock(self, filename: str, process_id: int) -> bool:
         if filename in self.file_locks and self.file_locks[filename] != process_id:
@@ -82,20 +86,28 @@ class FileSystem:
         OSLogger.log("FileSystem", f"Disk WRITE to '{filename}' by {process_name} (+{len(data)} bytes)")
         return True, 2
 
-    def read(self, filename, process):
-    if filename not in self.files:
-        return None, 0
-    
-    # Check if file is in cache
-    if filename in self.cache:
-        data = self.files[filename].data
-        return data, 0  # Cache hit returns 0 latency
-    
-    # Cache miss - load from disk
-    data = self.files[filename].data
-    self.cache[filename] = data
-    # ... handle cache eviction if needed
-    return data, 1  # Disk read returns latency
+    def read(self, filename: str, process_name: str) -> tuple[str | None, int]:
+        if filename not in self.files:
+            OSLogger.log("FileSystem", f"Read FAILED: File '{filename}' not found")
+            return None, 0
+
+        if filename in self.cache:
+            data = self.cache[filename]
+
+            if filename in self.cache_queue:
+                self.cache_queue.remove(filename)
+            self.cache_queue.append(filename)
+
+            OSLogger.log("FileSystem", f"Cache HIT on '{filename}' by {process_name}")
+            return data, 0
+
+        data = self.files[filename].content
+
+        self._manage_cache(filename)
+        self.cache[filename] = data
+
+        OSLogger.log("FileSystem", f"Cache MISS on '{filename}' by {process_name}")
+        return data, 1
 
     def delete(self, filename: str, process_name: str) -> bool:
         if filename not in self.files:
