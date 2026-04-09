@@ -82,21 +82,20 @@ class FileSystem:
         OSLogger.log("FileSystem", f"Disk WRITE to '{filename}' by {process_name} (+{len(data)} bytes)")
         return True, 2
 
-    def read(self, filename: str, process_name: str) -> tuple[str | None, int]:
-        if filename not in self.files:
-            OSLogger.log("FileSystem", f"Read FAILED: File '{filename}' not found")
-            return None, 0
-
-        if filename in self.cache:
-            OSLogger.log("FileSystem", f"CACHE HIT! Read '{filename}' by {process_name} (delay=1)")
-            return self.cache[filename], 1
-
-        OSLogger.log("FileSystem", f"CACHE MISS! Read '{filename}' from disk by {process_name} (Slow)")
-
-        self._manage_cache(filename)
-        self.cache[filename] = self.files[filename].content
-
-        return self.files[filename].content, 2
+    def read(self, filename, process):
+    if filename not in self.files:
+        return None, 0
+    
+    # Check if file is in cache
+    if filename in self.cache:
+        data = self.files[filename].data
+        return data, 0  # Cache hit returns 0 latency
+    
+    # Cache miss - load from disk
+    data = self.files[filename].data
+    self.cache[filename] = data
+    # ... handle cache eviction if needed
+    return data, 1  # Disk read returns latency
 
     def delete(self, filename: str, process_name: str) -> bool:
         if filename not in self.files:
