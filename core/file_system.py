@@ -88,8 +88,8 @@ class FileSystem:
             return None, 0
 
         if filename in self.cache:
-            OSLogger.log("FileSystem", f"CACHE HIT! Read '{filename}' by {process_name} (Fast)")
-            return self.cache[filename], 0
+            OSLogger.log("FileSystem", f"CACHE HIT! Read '{filename}' by {process_name} (delay=1)")
+            return self.cache[filename], 1
 
         OSLogger.log("FileSystem", f"CACHE MISS! Read '{filename}' from disk by {process_name} (Slow)")
 
