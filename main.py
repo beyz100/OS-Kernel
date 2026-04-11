@@ -209,12 +209,41 @@ def run_cross_component_interaction():
         phys_addr = memory.translate_address(pid=201, virtual_address=virtual_address)
         OSLogger.log("Process", f"Access SUCCESS -> Physical Address {phys_addr}", clock.current_tick)
 
+
+def run_cross_component_interaction2():
+    print("\n" + "=" * 60)
+    print("  SCENARIO 6: CROSS-COMPONENT INTERACTION II (I/O + SCHEDULER)")
+    print("=" * 60)
+
+    clock = Clock()
+    scheduler = FIFOScheduler()
+    fs = FileSystem(cache_size=2)
+    
+    p1 = Process(pid=301, arrival_time=0, burst_time=6, name="LoggerProcess")
+    p2 = Process(pid=302, arrival_time=0, burst_time=4, name="CalculatorProcess")
+    
+    scheduler.add_process(p1, clock.current_tick)
+    scheduler.add_process(p2, clock.current_tick)
+    
+    # Tick 1: P1 runs
+    scheduler.step(clock.current_tick)
+    clock.tick()
+    
+    fs.create("system.log", p1.name)
+    io_req = fs.request_write(p1, "system.log", "INIT")
+    scheduler.handle_io_request(p1, io_req, clock.current_tick)
+    
+    for _ in range(8):
+        scheduler.step(clock.current_tick)
+        clock.tick()
+
 if __name__ == "__main__":
     run_memory_scenario()
     run_filesystem_scenario()
     run_producer_consumer_scenario()
     run_integrated_baseline_scenario()
     run_cross_component_interaction()
+    run_cross_component_interaction2()
     
     print("\n" + "="*60)
     print("  ALL SCENARIOS COMPLETED SUCCESSFULLY.")

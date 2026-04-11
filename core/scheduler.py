@@ -6,6 +6,8 @@ class FIFOScheduler:
     def __init__(self):
         self.ready_queue = deque() 
         self.current_process = None
+        self.io_wait_queue = []
+
 
     def add_process(self, process: Process, tick: int | None = None):
         process.state = ProcessState.READY
@@ -23,7 +25,24 @@ class FIFOScheduler:
         self.ready_queue.append(process)
         OSLogger.log("Scheduler", f"Process PID={process.pid} unblocked and re-queued.", tick)
 
+    def handle_io_request(self, process: Process, io_request, tick: int | None = None):
+        if io_request.should_block:
+            self.block_process(process, tick)
+            self.io_wait_queue.append([process, io_request.delay])
+            OSLogger.log("Scheduler", f"Process PID={process.pid} blocked for {io_request.delay} ticks due to I/O.", tick)
+
     def step(self, tick: int | None = None):
+        if self.io_wait_queue:
+            completed_io = []
+            for item in self.io_wait_queue:
+                item[1] -= 1
+                if item[1] <= 0:
+                    completed_io.append(item[0])
+            
+            for p in completed_io:
+                self.unblock_process(p, tick)
+                self.io_wait_queue = [x for x in self.io_wait_queue if x[0] != p]
+
         if self.current_process and self.current_process.state == ProcessState.WAITING:
             OSLogger.log("Scheduler", f"Process PID={self.current_process.pid} is WAITING. CPU released.", tick)
             self.current_process = None 
