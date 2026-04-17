@@ -6,9 +6,9 @@ class DeadlockDetector:
         wait_for_graph = {}
 
         for lock in locks:
-            if lock.owner_pid is not None:
-                for waiter_pid in lock.wait_queue:
-                    wait_for_graph[waiter_pid] = lock.owner_pid
+            if lock.owner is not None:
+                for waiter in lock.wait_queue:
+                    wait_for_graph[waiter.pid] = lock.owner.pid
 
         deadlocked_pids = []
         for start_node in wait_for_graph:

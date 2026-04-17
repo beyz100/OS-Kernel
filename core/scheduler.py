@@ -7,9 +7,11 @@ class FIFOScheduler:
         self.ready_queue = deque() 
         self.current_process = None
         self.io_wait_queue = []
+        self.all_processes = {}
 
 
     def add_process(self, process: Process, tick: int | None = None):
+        self.all_processes[process.pid] = process
         process.state = ProcessState.READY
         self.ready_queue.append(process)
         OSLogger.log("Scheduler", f"Process PID={process.pid} moved to READY queue.", tick)
@@ -22,7 +24,8 @@ class FIFOScheduler:
 
     def unblock_process(self, process: Process, tick: int | None = None):
         process.state = ProcessState.READY
-        self.ready_queue.append(process)
+        if process not in self.ready_queue and self.current_process != process:
+            self.ready_queue.append(process)
         OSLogger.log("Scheduler", f"Process PID={process.pid} unblocked and re-queued.", tick)
 
     def handle_io_request(self, process: Process, io_request, tick: int | None = None):
@@ -31,7 +34,34 @@ class FIFOScheduler:
             self.io_wait_queue.append([process, io_request.delay])
             OSLogger.log("Scheduler", f"Process PID={process.pid} blocked for {io_request.delay} ticks due to I/O.", tick)
 
+    def terminate_process(self, pid: int, tick: int | None = None):
+        process = self.all_processes.get(pid)
+        if not process: return
+        process.state = ProcessState.TERMINATED
+        if process in self.ready_queue:
+            self.ready_queue.remove(process)
+        self.io_wait_queue = [x for x in self.io_wait_queue if x[0] != process]
+        if self.current_process == process:
+            self.current_process = None
+            
+        from core.sync import Mutex
+        for lock in Mutex.global_locks:
+            if lock.owner == process:
+                lock.release(process, self, tick)
+            if process in lock.wait_queue:
+                lock.wait_queue.remove(process)
+        OSLogger.log("Scheduler", f"Process PID={pid} forcefully TERMINATED. Locks released.", tick)
+
     def step(self, tick: int | None = None):
+        from core.deadlock import DeadlockDetector
+        from core.sync import Mutex
+        
+        deadlocked_pids = DeadlockDetector.check_deadlock(Mutex.global_locks)
+        if deadlocked_pids:
+            victim_pid = deadlocked_pids[-1]
+            OSLogger.log("Deadlock", f"Resolving deadlock by terminating victim PID={victim_pid}", tick)
+            self.terminate_process(victim_pid, tick)
+
         if self.io_wait_queue:
             completed_io = []
             for item in self.io_wait_queue:

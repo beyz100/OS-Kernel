@@ -5,6 +5,7 @@ from core.process import Process
 from core.scheduler import FIFOScheduler
 from utils.clock import Clock
 from utils.logger import OSLogger
+from core.sync import Mutex
 
 
 def run_memory_scenario():
@@ -237,6 +238,47 @@ def run_cross_component_interaction2():
         scheduler.step(clock.current_tick)
         clock.tick()
 
+
+def run_deadlock_scenario():
+    print("\n" + "=" * 60)
+    print("  SCENARIO 7: DEADLOCK DETECTION & RECOVERY (OS LOOP)")
+    print("=" * 60)
+
+    clock = Clock()
+    scheduler = FIFOScheduler()
+    
+    m1 = Mutex("Resource_A")
+    m2 = Mutex("Resource_B")
+
+    p1 = Process(pid=401, arrival_time=0, burst_time=5, name="Process_One")
+    p2 = Process(pid=402, arrival_time=0, burst_time=5, name="Process_Two")
+
+    scheduler.add_process(p1, clock.current_tick)
+    scheduler.add_process(p2, clock.current_tick)
+
+    # Tick 1: P1 runs, acquires M1
+    scheduler.step(clock.current_tick)
+    m1.acquire(p1, scheduler, clock.current_tick)
+    clock.tick()
+
+    # Tick 2: P2 runs (since P1 might still be running, wait, FIFOScheduler doesn't preempt unless IO/Wait)
+    # We will force P2 to run by blocking P1? Wait, in FIFO, P1 will run until completion or block.
+    # We can just manually have them acquire locks for demonstration:
+    m2.acquire(p2, scheduler, clock.current_tick)
+
+    OSLogger.log("Test", "Triggering Circular Wait (Deadlock)...", clock.current_tick)
+    
+    # P1 requests M2 (owned by P2) -> P1 blocks
+    m2.acquire(p1, scheduler, clock.current_tick)
+    
+    # P2 requests M1 (owned by P1) -> P2 blocks
+    m1.acquire(p2, scheduler, clock.current_tick)
+    
+    # Now loop, OS should detect deadlock and recover
+    for _ in range(5):
+        scheduler.step(clock.current_tick)
+        clock.tick()
+
 if __name__ == "__main__":
     run_memory_scenario()
     run_filesystem_scenario()
@@ -244,6 +286,7 @@ if __name__ == "__main__":
     run_integrated_baseline_scenario()
     run_cross_component_interaction()
     run_cross_component_interaction2()
+    run_deadlock_scenario()
     
     print("\n" + "="*60)
     print("  ALL SCENARIOS COMPLETED SUCCESSFULLY.")
