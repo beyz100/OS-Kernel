@@ -1,4 +1,5 @@
 from utils.logger import OSLogger
+import math
 
 
 class IORequest:
@@ -23,11 +24,12 @@ class File:
         self.size = 0
         self.created_tick = 0
         self.modified_tick = 0
+        self.corrupted = False  # ✅ NEW
 
 
 class FileSystem:
 
-    def __init__(self, cache_size: int = 3):
+    def __init__(self, cache_size: int = 3, max_blocks: int = 8, block_size: int = 16):
         self.files = {}
 
         self.cache = {}
@@ -36,7 +38,15 @@ class FileSystem:
 
         self.file_locks = {}
 
-        OSLogger.log("FileSystem", f"Initialized with cache_size={cache_size}")
+        # ✅ NEW DISK LIMIT SYSTEM
+        self.max_blocks = max_blocks
+        self.block_size = block_size
+        self.used_blocks = 0
+
+        OSLogger.log(
+            "FileSystem",
+            f"Initialized with cache_size={cache_size}, max_blocks={max_blocks}, block_size={block_size}"
+        )
 
     def _manage_cache(self, filename: str) -> None:
         if filename in self.cache_queue:
@@ -61,6 +71,15 @@ class FileSystem:
         if filename in self.file_locks:
             del self.file_locks[filename]
 
+    # ✅ NEW: block calculation
+    def _blocks_needed(self, size: int) -> int:
+        if size == 0:
+            return 0
+        return math.ceil(size / self.block_size)
+
+    def _recalculate_used_blocks(self):
+        self.used_blocks = sum(self._blocks_needed(f.size) for f in self.files.values())
+
     def create(self, filename: str, process_name: str) -> tuple[bool, int]:
         if filename in self.files:
             OSLogger.log("FileSystem", f"Create FAILED: File '{filename}' already exists")
@@ -72,23 +91,57 @@ class FileSystem:
 
     def write(self, filename: str, data: str, process_name: str) -> tuple[bool, int]:
         if filename not in self.files:
-            OSLogger.log("FileSystem", f"Write FAILED: File '{filename}' not found")
+            OSLogger.log("Failure", f"Write FAILED: File '{filename}' not found")
             return False, 0
 
         file_obj = self.files[filename]
 
-        file_obj.content += data
-        file_obj.size = len(file_obj.content)
+        # ✅ CORRUPTION CHECK
+        if file_obj.corrupted:
+            OSLogger.log("Failure", f"Write BLOCKED: '{filename}' is corrupted")
+            return False, 0
+
+        old_size = file_obj.size
+        new_content = file_obj.content + data
+        new_size = len(new_content)
+
+        old_blocks = self._blocks_needed(old_size)
+        new_blocks = self._blocks_needed(new_size)
+        extra_blocks = new_blocks - old_blocks
+
+        # ✅ DISK FULL CHECK
+        if self.used_blocks + extra_blocks > self.max_blocks:
+            OSLogger.log(
+                "Failure",
+                f"DISK FULL! Cannot write to '{filename}' "
+                f"(used={self.used_blocks}/{self.max_blocks})"
+            )
+            return False, 0
+
+        # apply write
+        file_obj.content = new_content
+        file_obj.size = new_size
+        self.used_blocks += extra_blocks
 
         self._manage_cache(filename)
         self.cache[filename] = file_obj.content
 
-        OSLogger.log("FileSystem", f"Disk WRITE to '{filename}' by {process_name} (+{len(data)} bytes)")
+        OSLogger.log(
+            "FileSystem",
+            f"Disk WRITE '{filename}' (+{len(data)} bytes, blocks={self.used_blocks}/{self.max_blocks})"
+        )
         return True, 2
 
     def read(self, filename: str, process_name: str) -> tuple[str | None, int]:
         if filename not in self.files:
-            OSLogger.log("FileSystem", f"Read FAILED: File '{filename}' not found")
+            OSLogger.log("Failure", f"Read FAILED: File '{filename}' not found")
+            return None, 0
+
+        file_obj = self.files[filename]
+
+        # ✅ CORRUPTION CHECK
+        if file_obj.corrupted:
+            OSLogger.log("Failure", f"CORRUPTED FILE read attempt: '{filename}'")
             return None, 0
 
         if filename in self.cache:
@@ -101,7 +154,7 @@ class FileSystem:
             OSLogger.log("FileSystem", f"Cache HIT on '{filename}' by {process_name}")
             return data, 0
 
-        data = self.files[filename].content
+        data = file_obj.content
 
         self._manage_cache(filename)
         self.cache[filename] = data
@@ -123,7 +176,27 @@ class FileSystem:
 
         self._release_lock(filename)
 
-        OSLogger.log("FileSystem", f"Deleted file '{filename}' (Action by: {process_name})")
+        self._recalculate_used_blocks()  # ✅ update disk usage
+
+        OSLogger.log(
+            "FileSystem",
+            f"Deleted '{filename}' (blocks={self.used_blocks}/{self.max_blocks})"
+        )
+        return True
+
+    # ✅ NEW: force corruption
+    def corrupt_file(self, filename: str) -> bool:
+        if filename not in self.files:
+            return False
+
+        self.files[filename].corrupted = True
+
+        if filename in self.cache:
+            del self.cache[filename]
+        if filename in self.cache_queue:
+            self.cache_queue.remove(filename)
+
+        OSLogger.log("Failure", f"File '{filename}' marked as CORRUPTED")
         return True
 
     def exists(self, filename: str) -> bool:
@@ -144,7 +217,7 @@ class FileSystem:
 
     def request_read(self, process, filename: str) -> IORequest:
         data, delay = self.read(filename, process.name)
-        OSLogger.log("FileSystem", f"PID={process.pid} requested READ on '{filename}' (delay={delay})")
+        OSLogger.log("FileSystem", f"PID={process.pid} READ '{filename}' (delay={delay})")
         return IORequest(
             pid=process.pid,
             op="read",
@@ -156,7 +229,7 @@ class FileSystem:
 
     def request_write(self, process, filename: str, data: str) -> IORequest:
         success, delay = self.write(filename, data, process.name)
-        OSLogger.log("FileSystem", f"PID={process.pid} requested WRITE on '{filename}' (delay={delay})")
+        OSLogger.log("FileSystem", f"PID={process.pid} WRITE '{filename}' (delay={delay})")
         return IORequest(
             pid=process.pid,
             op="write",
@@ -167,9 +240,14 @@ class FileSystem:
 
     def get_stats(self) -> dict:
         total_size = sum(f.size for f in self.files.values())
+        corrupted_files = sum(1 for f in self.files.values() if f.corrupted)
+
         return {
             "total_files": len(self.files),
             "total_size": total_size,
             "cache_items": len(self.cache),
-            "cache_size": self.cache_size
+            "cache_size": self.cache_size,
+            "used_blocks": self.used_blocks,
+            "max_blocks": self.max_blocks,
+            "corrupted_files": corrupted_files
         }

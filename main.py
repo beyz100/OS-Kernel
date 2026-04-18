@@ -81,11 +81,11 @@ def run_filesystem_scenario():
     OSLogger.log("System", f"Write events.log: {success} (latency={latency})", clock.current_tick)
     clock.tick()
     
-    data, read_latency = fs.read("vitals.log", "ProcessC")  # CACHE MISS
+    data, read_latency = fs.read("vitals.log", "ProcessC")
     OSLogger.log("System", f"Read vitals.log: latency={read_latency} (MISS)", clock.current_tick)
     clock.tick()
     
-    data, read_latency = fs.read("vitals.log", "ProcessD")  # CACHE HIT
+    data, read_latency = fs.read("vitals.log", "ProcessD")
     OSLogger.log("System", f"Read vitals.log: latency={read_latency} (HIT)", clock.current_tick)
     clock.tick()
     
@@ -130,7 +130,7 @@ def run_producer_consumer_scenario():
 
 def run_integrated_baseline_scenario():
     print("\n" + "=" * 60)
-    print("  SCENARIO 4: INTEGRATED BASELINE (SCHEDULER + MEMORY + FS + SYNC)")
+    print("  SCENARIO 4: INTEGRATED BASELINE")
     print("=" * 60)
 
     clock = Clock()
@@ -161,12 +161,11 @@ def run_integrated_baseline_scenario():
 
     memory.deallocate(pid=101, tick=clock.current_tick)
     memory.deallocate(pid=102, tick=clock.current_tick)
-    OSLogger.log("System", "Integrated baseline scenario completed.", clock.current_tick)
 
 
 def run_cross_component_interaction():
     print("\n" + "=" * 60)
-    print("  SCENARIO 5: CROSS-COMPONENT INTERACTION I (MEMORY + SCHEDULER)")
+    print("  SCENARIO 5: MEMORY + SCHEDULER")
     print("=" * 60)
 
     clock = Clock()
@@ -184,35 +183,24 @@ def run_cross_component_interaction():
     memory.page_tables[201][0].valid = False
     memory.page_tables[201][0].frame_number = None
     
-    virtual_address = 0
-    OSLogger.log("Process", f"PID {p1.pid} requesting access to Virtual Address {virtual_address}", clock.current_tick)
-    
     try:
-        phys_addr = memory.translate_address(pid=201, virtual_address=virtual_address)
+        memory.translate_address(pid=201, virtual_address=0)
     except PageFaultTrap as e:
-        OSLogger.log("Kernel", "Caught PageFaultTrap, blocking process...", clock.current_tick)
         scheduler.block_process(p1, clock.current_tick)
-        
         scheduler.step(clock.current_tick)
         clock.tick()
         
-        OSLogger.log("Kernel", "Fetching required page into physical memory...", clock.current_tick)
         memory.handle_page_fault(pid=e.pid, virtual_address=e.virtual_address, tick=clock.current_tick)
         clock.tick()
         
         scheduler.unblock_process(p1, clock.current_tick)
-        
         scheduler.step(clock.current_tick)
         clock.tick()
-
-        OSLogger.log("Process", f"PID {p1.pid} retrying access to Virtual Address {virtual_address}", clock.current_tick)
-        phys_addr = memory.translate_address(pid=201, virtual_address=virtual_address)
-        OSLogger.log("Process", f"Access SUCCESS -> Physical Address {phys_addr}", clock.current_tick)
 
 
 def run_cross_component_interaction2():
     print("\n" + "=" * 60)
-    print("  SCENARIO 6: CROSS-COMPONENT INTERACTION II (I/O + SCHEDULER)")
+    print("  SCENARIO 6: I/O + SCHEDULER")
     print("=" * 60)
 
     clock = Clock()
@@ -225,7 +213,6 @@ def run_cross_component_interaction2():
     scheduler.add_process(p1, clock.current_tick)
     scheduler.add_process(p2, clock.current_tick)
     
-    # Tick 1: P1 runs
     scheduler.step(clock.current_tick)
     clock.tick()
     
@@ -237,6 +224,37 @@ def run_cross_component_interaction2():
         scheduler.step(clock.current_tick)
         clock.tick()
 
+
+# ✅ NEW WEEK 11 SCENARIO
+def run_filesystem_failure_scenario():
+    print("\n" + "=" * 60)
+    print("  SCENARIO 7: ENGINEERING CHALLENGE (DISK FULL + CORRUPTION)")
+    print("=" * 60)
+
+    fs = FileSystem(cache_size=2, max_blocks=3, block_size=10)
+
+    print("\nCreating files...")
+    fs.create("report.txt", "P1")
+    fs.create("backup.txt", "P2")
+
+    print("\nFilling disk...")
+    fs.write("report.txt", "1234567890", "P1")
+    fs.write("report.txt", "abcdefghij", "P1")
+    fs.write("backup.txt", "KLMNOPQRST", "P2")
+
+    print("\nTrigger disk full...")
+    fs.write("backup.txt", "OVERFLOW", "P2")
+
+    print("\nCorrupt file...")
+    fs.corrupt_file("report.txt")
+
+    print("\nRead corrupted file...")
+    fs.read("report.txt", "P3")
+
+    print("\nFinal stats:")
+    print(fs.get_stats())
+
+
 if __name__ == "__main__":
     run_memory_scenario()
     run_filesystem_scenario()
@@ -244,7 +262,8 @@ if __name__ == "__main__":
     run_integrated_baseline_scenario()
     run_cross_component_interaction()
     run_cross_component_interaction2()
-    
+    run_filesystem_failure_scenario()
+
     print("\n" + "="*60)
     print("  ALL SCENARIOS COMPLETED SUCCESSFULLY.")
     print("="*60 + "\n")
