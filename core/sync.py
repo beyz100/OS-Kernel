@@ -1,11 +1,14 @@
 from utils.logger import OSLogger
 
 class Mutex:
+    global_locks = []
+
     def __init__(self, name: str):
         self.name = name
         self.locked = False
         self.owner = None
         self.wait_queue = []
+        Mutex.global_locks.append(self)
 
     def acquire(self, process, scheduler=None, tick: int | None = None) -> bool:
         if not self.locked:

@@ -5,6 +5,7 @@ from core.process import Process
 from core.scheduler import FIFOScheduler
 from utils.clock import Clock
 from utils.logger import OSLogger
+from core.sync import Mutex
 
 
 def run_memory_scenario():
@@ -225,10 +226,42 @@ def run_cross_component_interaction2():
         clock.tick()
 
 
-# ✅ NEW WEEK 11 SCENARIO
+def run_deadlock_scenario():
+    print("\n" + "=" * 60)
+    print("  SCENARIO 7: DEADLOCK DETECTION & RECOVERY (OS LOOP)")
+    print("=" * 60)
+
+    clock = Clock()
+    scheduler = FIFOScheduler()
+    
+    m1 = Mutex("Resource_A")
+    m2 = Mutex("Resource_B")
+
+    p1 = Process(pid=401, arrival_time=0, burst_time=5, name="Process_One")
+    p2 = Process(pid=402, arrival_time=0, burst_time=5, name="Process_Two")
+
+    scheduler.add_process(p1, clock.current_tick)
+    scheduler.add_process(p2, clock.current_tick)
+
+    scheduler.step(clock.current_tick)
+    m1.acquire(p1, scheduler, clock.current_tick)
+    clock.tick()
+
+    m2.acquire(p2, scheduler, clock.current_tick)
+
+    OSLogger.log("Test", "Triggering Circular Wait (Deadlock)...", clock.current_tick)
+    
+    m2.acquire(p1, scheduler, clock.current_tick)
+    m1.acquire(p2, scheduler, clock.current_tick)
+    
+    for _ in range(5):
+        scheduler.step(clock.current_tick)
+        clock.tick()
+
+
 def run_filesystem_failure_scenario():
     print("\n" + "=" * 60)
-    print("  SCENARIO 7: ENGINEERING CHALLENGE (DISK FULL + CORRUPTION)")
+    print("  SCENARIO 8: ENGINEERING CHALLENGE (DISK FULL + CORRUPTION)")
     print("=" * 60)
 
     fs = FileSystem(cache_size=2, max_blocks=3, block_size=10)
@@ -262,6 +295,7 @@ if __name__ == "__main__":
     run_integrated_baseline_scenario()
     run_cross_component_interaction()
     run_cross_component_interaction2()
+    run_deadlock_scenario()
     run_filesystem_failure_scenario()
 
     print("\n" + "="*60)
