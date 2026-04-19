@@ -10,16 +10,9 @@ from utils.logger import OSLogger
 
 
 # ---------------------------------------------------------------------------
-# Shared adapter: converts Mutex (stores Process objects) to the shape
-# DeadlockDetector.check_deadlock() expects (owner_pid int, wait_queue PIDs).
+# FAILURE SCENARIO A: Out-Of-Memory (OOM)
+# Intentionally fills the tiny memory pool until allocation fails.
 # ---------------------------------------------------------------------------
-class _LockView:
-    """Read-only snapshot of a Mutex for DeadlockDetector."""
-    def __init__(self, mutex: Mutex):
-        self.owner_pid = mutex.owner.pid if mutex.owner is not None else None
-        self.wait_queue = [p.pid for p in mutex.wait_queue]
-
-
 def run_memory_scenario():
     print("\n" + "="*70)
     print("  SCENARIO 1: BASELINE PAGING MEMORY MANAGER (ADDRESS TRANSLATION)")
@@ -330,7 +323,7 @@ def run_failure_deadlock():
     lock_X.acquire(p2, scheduler, clock.current_tick)
     clock.tick()
 
-    deadlocked = DeadlockDetector.check_deadlock([_LockView(m) for m in Mutex.global_locks])
+    deadlocked = DeadlockDetector.check_deadlock(Mutex.global_locks)
 
     if deadlocked:
         OSLogger.log("Failure",
@@ -447,7 +440,7 @@ def run_deadlock_scenario():
     m1.acquire(p2, scheduler, clock.current_tick)
 
     # Deadlock detection using global_locks registry
-    deadlocked = DeadlockDetector.check_deadlock([_LockView(m) for m in Mutex.global_locks])
+    deadlocked = DeadlockDetector.check_deadlock(Mutex.global_locks)
 
     if deadlocked:
         OSLogger.log("Scheduler",
