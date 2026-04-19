@@ -4,8 +4,22 @@ class Mutex:
     def __init__(self, name: str):
         self.name = name
         self.locked = False
-        self.owner = None
-        self.wait_queue = []
+        self.owner = None        # Process object (or None)
+        self.wait_queue = []     # list of Process objects waiting
+
+    # ------------------------------------------------------------------
+    # Compatibility shim for DeadlockDetector.check_deadlock(), which
+    # expects lock.owner_pid (int|None) and lock.wait_queue of PIDs.
+    # ------------------------------------------------------------------
+    @property
+    def owner_pid(self) -> int | None:
+        """Return the PID of the current owner, or None."""
+        return self.owner.pid if self.owner is not None else None
+
+    @property
+    def waiter_pids(self) -> list[int]:
+        """Return PIDs of all processes in the wait queue."""
+        return [p.pid for p in self.wait_queue]
 
     def acquire(self, process, scheduler=None, tick: int | None = None) -> bool:
         if not self.locked:
