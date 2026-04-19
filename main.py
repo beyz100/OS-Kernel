@@ -9,6 +9,17 @@ from utils.clock import Clock
 from utils.logger import OSLogger
 
 
+# ---------------------------------------------------------------------------
+# Shared adapter: converts Mutex (stores Process objects) to the shape
+# DeadlockDetector.check_deadlock() expects (owner_pid int, wait_queue PIDs).
+# ---------------------------------------------------------------------------
+class _LockView:
+    """Read-only snapshot of a Mutex for DeadlockDetector."""
+    def __init__(self, mutex: Mutex):
+        self.owner_pid = mutex.owner.pid if mutex.owner is not None else None
+        self.wait_queue = [p.pid for p in mutex.wait_queue]
+
+
 def run_memory_scenario():
     print("\n" + "="*70)
     print("  SCENARIO 1: BASELINE PAGING MEMORY MANAGER (ADDRESS TRANSLATION)")
@@ -132,7 +143,7 @@ def run_producer_consumer_scenario():
 
 def run_integrated_baseline_scenario():
     print("\n" + "=" * 60)
-    print("  SCENARIO 4: INTEGRATED BASELINE (SCHEDULER + MEMORY + FS + SYNC)")
+    print("  SCENARIO 4: INTEGRATED BASELINE")
     print("=" * 60)
 
     clock = Clock()
@@ -239,6 +250,7 @@ def run_cross_component_interaction2():
         scheduler.step(clock.current_tick)
         clock.tick()
 
+
 # ---------------------------------------------------------------------------
 # FAILURE SCENARIO A: Out-Of-Memory (OOM)
 # Intentionally fills the tiny memory pool until allocation fails.
@@ -249,7 +261,6 @@ def run_failure_oom():
     print("="*70)
 
     clock = Clock()
-    # Tiny pool: only 4 frames (40 bytes / 10 per frame)
     mem = MemoryManager(total_memory=40, page_size=10)
     scheduler = FIFOScheduler()
 
@@ -283,14 +294,15 @@ def run_failure_oom():
 
 
 # ---------------------------------------------------------------------------
-# FAILURE SCENARIO B: DEADLOCK
+# FAILURE SCENARIO B: DEADLOCK (Armita)
 # Two processes each hold one mutex and wait for the other — circular wait.
-# DeadlockDetector identifies the cycle; the OS logs & performs recovery.
 # ---------------------------------------------------------------------------
 def run_failure_deadlock():
     print("\n" + "="*70)
     print("  FAILURE SCENARIO B: DEADLOCK (CIRCULAR WAIT)")
     print("="*70)
+
+    Mutex.global_locks.clear()   # reset registry for this scenario
 
     clock = Clock()
     scheduler = FIFOScheduler()
@@ -305,50 +317,30 @@ def run_failure_deadlock():
 
     OSLogger.log("Failure", "Setting up circular-wait deadlock between PID=10 and PID=20.", clock.current_tick)
 
-    # P1 acquires Lock-X, P2 acquires Lock-Y
     lock_X.acquire(p1, scheduler, clock.current_tick)
     clock.tick()
     lock_Y.acquire(p2, scheduler, clock.current_tick)
     clock.tick()
 
-    # P1 now waits for Lock-Y (held by P2) → blocked
     OSLogger.log("Failure", "PID=10 requests Lock-Y (held by PID=20) — will block.", clock.current_tick)
     lock_Y.acquire(p1, scheduler, clock.current_tick)
     clock.tick()
 
-    # P2 now waits for Lock-X (held by P1) → blocked, circular wait established
     OSLogger.log("Failure", "PID=20 requests Lock-X (held by PID=10) — circular wait! Deadlock imminent.", clock.current_tick)
     lock_X.acquire(p2, scheduler, clock.current_tick)
     clock.tick()
 
-    # ----------------------------------------------------------------
-    # Build adapters for DeadlockDetector.check_deadlock(), which
-    # expects lock.owner_pid (int|None) and lock.wait_queue of PIDs.
-    # Mutex stores Process objects, so we adapt without touching
-    # Beyza's detector code.
-    # ----------------------------------------------------------------
-    class _LockView:
-        """Read-only view of a Mutex compatible with DeadlockDetector."""
-        def __init__(self, mutex: Mutex):
-            self.owner_pid = mutex.owner.pid if mutex.owner is not None else None
-            self.wait_queue = [p.pid for p in mutex.wait_queue]
-
-    # Run deadlock detection
-    deadlocked = DeadlockDetector.check_deadlock([_LockView(lock_X), _LockView(lock_Y)])
+    deadlocked = DeadlockDetector.check_deadlock([_LockView(m) for m in Mutex.global_locks])
 
     if deadlocked:
         OSLogger.log("Failure",
                      f"DEADLOCK CONFIRMED for PIDs {deadlocked}. "
                      "OS recovery: releasing all locks held by victim PID=10.",
                      clock.current_tick)
-        # Recovery: forcibly release the victim's lock so the other can proceed
-        victim = p1
-        lock_X.owner = victim          # ensure owner is set for proper release
-        lock_X.release(victim, scheduler, clock.current_tick)
+        lock_X.owner = p1
+        lock_X.release(p1, scheduler, clock.current_tick)
         scheduler.unblock_process(p2, clock.current_tick)
-        OSLogger.log("Failure",
-                     "Deadlock resolved. PID=20 unblocked and can now proceed.",
-                     clock.current_tick)
+        OSLogger.log("Failure", "Deadlock resolved. PID=20 unblocked and can now proceed.", clock.current_tick)
     else:
         OSLogger.log("Failure", "No deadlock detected (unexpected).", clock.current_tick)
 
@@ -356,9 +348,7 @@ def run_failure_deadlock():
 
 
 # ---------------------------------------------------------------------------
-# FAILURE SCENARIO C: DISK FULL / CORRUPTED FILE
-# Fills the file system to its block limit, then attempts further writes &
-# a corrupted-read, verifying the OS handles both gracefully.
+# FAILURE SCENARIO C: DISK FULL / CORRUPTED FILE (Armita)
 # ---------------------------------------------------------------------------
 def run_failure_disk_full():
     print("\n" + "="*70)
@@ -366,8 +356,7 @@ def run_failure_disk_full():
     print("="*70)
 
     clock = Clock()
-    # Simulate a very small disk: cap at MAX_BLOCKS total data bytes
-    MAX_BLOCKS = 50  # bytes
+    MAX_BLOCKS = 50
     fs = FileSystem(cache_size=2)
 
     OSLogger.log("Failure", f"Starting Disk Full test. Disk capacity: {MAX_BLOCKS} bytes.", clock.current_tick)
@@ -375,7 +364,6 @@ def run_failure_disk_full():
     total_written = 0
     file_index = 0
 
-    # Fill the disk until adding more data would exceed capacity
     while total_written + 10 <= MAX_BLOCKS:
         fname = f"file_{file_index}.dat"
         fs.create(fname, "KernelWriter")
@@ -388,33 +376,24 @@ def run_failure_disk_full():
         file_index += 1
         clock.tick()
 
-    # Now attempt one more write that would exceed capacity
     overflow_file = "overflow.dat"
     fs.create(overflow_file, "KernelWriter")
-    OSLogger.log(
-        "Failure",
-        f"Disk is full ({total_written}/{MAX_BLOCKS} bytes). "
-        "Attempting overflow write — OS must reject gracefully.",
-        clock.current_tick
-    )
-    # We flag the disk-full condition manually (the FS has no hard quota),
-    # so we gate the write and log the failure ourselves — mirroring a real kernel check.
-    disk_full = (total_written >= MAX_BLOCKS)
-    if disk_full:
+    OSLogger.log("Failure",
+                 f"Disk is full ({total_written}/{MAX_BLOCKS} bytes). "
+                 "Attempting overflow write — OS must reject gracefully.",
+                 clock.current_tick)
+    if total_written >= MAX_BLOCKS:
         OSLogger.log("Failure",
                      "DISK FULL: Write to 'overflow.dat' rejected. "
                      "No data written. OS loop stable.",
                      clock.current_tick)
     else:
         fs.write(overflow_file, "OVERFLOW", "KernelWriter")
-
     clock.tick()
 
-    # Simulate a corrupted-file read: file exists but content is empty/garbled
     corrupt_file = "corrupt.dat"
     fs.create(corrupt_file, "KernelWriter")
-    # Intentionally corrupt: write nothing, then manually zero out the stored content
-    fs.files[corrupt_file].content = "\x00" * 5  # null bytes = corrupted
+    fs.files[corrupt_file].content = "\x00" * 5
     fs.files[corrupt_file].size = 5
     OSLogger.log("Failure", "Simulating corrupted file 'corrupt.dat' (null-byte content).", clock.current_tick)
 
@@ -424,8 +403,6 @@ def run_failure_disk_full():
                      "CORRUPTED FILE DETECTED: 'corrupt.dat' contains only null bytes. "
                      "OS logs the error and skips processing.",
                      clock.current_tick)
-    else:
-        OSLogger.log("Failure", f"Read from 'corrupt.dat': '{data}'", clock.current_tick)
 
     stats = fs.get_stats()
     OSLogger.log("Failure",
@@ -433,6 +410,97 @@ def run_failure_disk_full():
                  f"total_size={stats['total_size']} bytes, cache_items={stats['cache_items']}.",
                  clock.current_tick)
     OSLogger.log("Failure", "Disk Full scenario complete. Main OS loop continues normally.", clock.current_tick)
+
+
+# ---------------------------------------------------------------------------
+# SCENARIO 7: DEADLOCK DETECTION & RECOVERY IN OS LOOP (Beyza integration)
+# Uses Mutex.global_locks so DeadlockDetector runs automatically each step.
+# ---------------------------------------------------------------------------
+def run_deadlock_scenario():
+    print("\n" + "=" * 60)
+    print("  SCENARIO 7: DEADLOCK DETECTION & RECOVERY (OS LOOP)")
+    print("=" * 60)
+
+    Mutex.global_locks.clear()   # reset registry for this scenario
+
+    clock = Clock()
+    scheduler = FIFOScheduler()
+
+    m1 = Mutex("Resource_A")
+    m2 = Mutex("Resource_B")
+
+    p1 = Process(pid=401, arrival_time=0, burst_time=5, name="Process_One")
+    p2 = Process(pid=402, arrival_time=0, burst_time=5, name="Process_Two")
+
+    scheduler.add_process(p1, clock.current_tick)
+    scheduler.add_process(p2, clock.current_tick)
+
+    scheduler.step(clock.current_tick)
+    m1.acquire(p1, scheduler, clock.current_tick)
+    clock.tick()
+
+    m2.acquire(p2, scheduler, clock.current_tick)
+
+    OSLogger.log("Test", "Triggering Circular Wait (Deadlock)...", clock.current_tick)
+
+    m2.acquire(p1, scheduler, clock.current_tick)
+    m1.acquire(p2, scheduler, clock.current_tick)
+
+    # Deadlock detection using global_locks registry
+    deadlocked = DeadlockDetector.check_deadlock([_LockView(m) for m in Mutex.global_locks])
+
+    if deadlocked:
+        OSLogger.log("Scheduler",
+                     f"DEADLOCK DETECTED for PIDs {deadlocked}. "
+                     "Recovering: releasing Resource_A from victim PID=401.",
+                     clock.current_tick)
+        m1.owner = p1
+        m1.release(p1, scheduler, clock.current_tick)
+        scheduler.unblock_process(p2, clock.current_tick)
+        OSLogger.log("Scheduler", "Recovery complete. Continuing OS loop.", clock.current_tick)
+
+    for _ in range(5):
+        scheduler.step(clock.current_tick)
+        clock.tick()
+
+
+# ---------------------------------------------------------------------------
+# SCENARIO 8: DISK FULL + FILE CORRUPTION (Bartu integration)
+# Uses FileSystem with max_blocks quota and corrupt_file() method.
+# ---------------------------------------------------------------------------
+def run_filesystem_failure_scenario():
+    print("\n" + "=" * 60)
+    print("  SCENARIO 8: ENGINEERING CHALLENGE (DISK FULL + CORRUPTION)")
+    print("=" * 60)
+
+    # max_blocks=3, block_size=10 → max capacity = 30 bytes
+    fs = FileSystem(cache_size=2, max_blocks=3, block_size=10)
+
+    print("\nCreating files...")
+    fs.create("report.txt", "P1")
+    fs.create("backup.txt", "P2")
+
+    print("\nFilling disk...")
+    fs.write("report.txt", "1234567890", "P1")   # block 1
+    fs.write("report.txt", "abcdefghij", "P1")   # block 2
+    fs.write("backup.txt", "KLMNOPQRST", "P2")   # block 3 — disk full
+
+    print("\nTrigger disk full...")
+    fs.write("backup.txt", "OVERFLOW", "P2")      # rejected
+
+    print("\nCorrupt file...")
+    fs.corrupt_file("report.txt")
+
+    print("\nRead corrupted file...")
+    fs.read("report.txt", "P3")
+
+    print("\nFinal stats:")
+    stats = fs.get_stats()
+    OSLogger.log("FileSystem",
+                 f"Stats — files={stats['total_files']}, size={stats['total_size']}B, "
+                 f"blocks={stats['used_blocks']}/{stats['max_blocks']}, "
+                 f"corrupted={stats['corrupted_files']}",
+                 None)
 
 
 if __name__ == "__main__":
@@ -447,6 +515,11 @@ if __name__ == "__main__":
     run_failure_oom()
     run_failure_deadlock()
     run_failure_disk_full()
+    # ─────────────────────────────────────────────────────────────────────
+
+    # ── Week 11: Beyza + Bartu integration scenarios ──────────────────────
+    run_deadlock_scenario()
+    run_filesystem_failure_scenario()
     # ─────────────────────────────────────────────────────────────────────
 
     print("\n" + "="*60)

@@ -1,11 +1,14 @@
 from utils.logger import OSLogger
 
 class Mutex:
+    global_locks = []
+
     def __init__(self, name: str):
         self.name = name
         self.locked = False
         self.owner = None        # Process object (or None)
         self.wait_queue = []     # list of Process objects waiting
+        Mutex.global_locks.append(self)
 
     # ------------------------------------------------------------------
     # Compatibility shim for DeadlockDetector.check_deadlock(), which
@@ -55,8 +58,7 @@ class Mutex:
             self.locked = False
             self.owner = None
             return None
-        
-        
+
 
 class ConditionVariable:
     def __init__(self, name: str):
