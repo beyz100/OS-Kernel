@@ -1,5 +1,5 @@
 from core.process import Process, ProcessState
-from core.scheduler import FIFOScheduler
+from core.scheduler import FIFOScheduler, RRScheduler
 
 def test_fifo_scheduler():
     scheduler = FIFOScheduler()
@@ -58,6 +58,31 @@ def test_block_unblock_process():
     assert p1.state == ProcessState.READY
     
     # Process gets scheduled again
+    # Process gets scheduled again
     scheduler.step()
     assert p1.state == ProcessState.RUNNING
     assert scheduler.current_process == p1
+
+def test_rr_scheduler_preemption():
+    scheduler = RRScheduler(time_quantum=2)
+    p1 = Process(pid=1, arrival_time=0, burst_time=4)
+    p2 = Process(pid=2, arrival_time=0, burst_time=3)
+    
+    scheduler.add_process(p1)
+    scheduler.add_process(p2)
+    
+    # Tick 1, p1 runs
+    scheduler.step()
+    assert scheduler.current_process == p1
+    assert scheduler.current_quantum == 1
+    
+    # Tick 2, p1 runs and reaches quantum
+    scheduler.step()
+    assert scheduler.current_process == p1
+    assert scheduler.current_quantum == 2
+    
+    # Tick 3, p2 should run because p1 is preempted
+    scheduler.step()
+    assert scheduler.current_process == p2
+    assert p1.state == ProcessState.READY
+    assert p1.waiting_time == 1

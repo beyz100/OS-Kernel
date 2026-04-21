@@ -1,8 +1,8 @@
 from core.problems import BoundedBuffer
 from core.file_system import FileSystem
 from core.memory import MemoryManager, PageFaultTrap
-from core.process import Process
-from core.scheduler import FIFOScheduler
+from core.process import Process, ProcessState
+from core.scheduler import FIFOScheduler, RRScheduler
 from core.sync import Mutex
 from core.deadlock import DeadlockDetector
 from utils.clock import Clock
@@ -496,6 +496,77 @@ def run_filesystem_failure_scenario():
                  None)
 
 
+# ---------------------------------------------------------------------------
+# WEEK 12: HEAVY CONCURRENCY & SCHEDULER EVALUATION
+# Compares FIFO and Round-Robin under stress (5 producers, 5 consumers).
+# ---------------------------------------------------------------------------
+def _run_stress_test(scheduler_class, scheduler_name, time_quantum=None):
+    print(f"\n" + "="*60)
+    print(f"  WEEK 12: STRESS TEST WITH {scheduler_name}")
+    print("="*60)
+    
+    # Must reset global locks for isolated scenario
+    Mutex.global_locks.clear()
+
+    clock = Clock()
+    scheduler = scheduler_class(time_quantum) if time_quantum else scheduler_class()
+    buffer = BoundedBuffer(capacity=5)
+    
+    producers = [Process(pid=i, arrival_time=0, burst_time=15, name=f"Producer-{i}") for i in range(1, 6)]
+    consumers = [Process(pid=i, arrival_time=0, burst_time=15, name=f"Consumer-{i}") for i in range(6, 11)]
+    
+    for p in producers + consumers:
+        scheduler.add_process(p, clock.current_tick)
+        
+    terminated_count = 0
+    total_processes = 10
+    
+    while terminated_count < total_processes and clock.current_tick < 300:
+        active_p = scheduler.step(clock.current_tick)
+        if active_p and active_p.state == ProcessState.RUNNING:
+            if "Producer" in active_p.name:
+                buffer.produce(active_p, f"Item-from-{active_p.pid}", scheduler, clock.current_tick)
+            elif "Consumer" in active_p.name:
+                buffer.consume(active_p, scheduler, clock.current_tick)
+                
+        terminated_count = sum(1 for p in (producers + consumers) if p.state == ProcessState.TERMINATED)
+        clock.tick()
+        
+    avg_turnaround = sum(p.turnaround_time for p in producers + consumers) / total_processes
+    avg_waiting = sum(p.waiting_time for p in producers + consumers) / total_processes
+    
+    print(f"\n--- {scheduler_name} RESULTS ---")
+    print(f"Total Ticks: {clock.current_tick}")
+    print(f"Context Switches: {scheduler.context_switches}")
+    print(f"Average Turnaround Time: {avg_turnaround:.2f} ticks")
+    print(f"Average Waiting Time: {avg_waiting:.2f} ticks\n")
+    return scheduler.context_switches, avg_waiting, avg_turnaround
+
+def run_week12_comparison():
+    print("\n\n" + "#"*70)
+    print("  WEEK 12: SCHEDULER COMPARISON (FIFO vs ROUND ROBIN)")
+    print("#"*70)
+    
+    fifo_cs, fifo_wait, fifo_tat = _run_stress_test(FIFOScheduler, "FIFO Scheduler")
+    rr_cs, rr_wait, rr_tat = _run_stress_test(RRScheduler, "Round Robin (Q=3) Scheduler", time_quantum=3)
+    
+    print("="*60)
+    print("  COMPARISON SUMMARY")
+    print("="*60)
+    print(f"FIFO Scheduler => Context Switches: {fifo_cs:3}, Avg Wait: {fifo_wait:5.2f}, Avg Turnaround: {fifo_tat:5.2f}")
+    print(f"RR Scheduler   => Context Switches: {rr_cs:3}, Avg Wait: {rr_wait:5.2f}, Avg Turnaround: {rr_tat:5.2f}")
+    
+    print("\nOBSERVATIONS:")
+    if rr_cs > fifo_cs:
+        print("- Context-switch overhead is significantly higher in RR due to preemptions.")
+    else:
+        print("- Context-switch overhead didn't behave as expected. Please check logging.")
+    
+    if rr_wait > fifo_wait:
+        print("- RR yields higher average waiting time for this workload.")
+    else:
+        print("- FIFO yielded higher average waiting time.")
+
 if __name__ == "__main__":
     run_memory_scenario()
     run_filesystem_scenario()
@@ -513,6 +584,10 @@ if __name__ == "__main__":
     # ── Week 11: Beyza + Bartu integration scenarios ──────────────────────
     run_deadlock_scenario()
     run_filesystem_failure_scenario()
+    # ─────────────────────────────────────────────────────────────────────
+
+    # ── Week 12: Beyza — Measurement & Under-Stress Testing ────────────────
+    run_week12_comparison()
     # ─────────────────────────────────────────────────────────────────────
 
     print("\n" + "="*60)
