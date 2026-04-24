@@ -567,6 +567,27 @@ def run_week12_comparison():
     else:
         print("- FIFO yielded higher average waiting time.")
 
+def run_week12_filesystem_benchmark():
+    print("\n" + "=" * 60)
+    print("  WEEK 12: FILE SYSTEM BENCHMARK")
+    print("=" * 60)
+
+    fs = FileSystem(cache_size=2)
+
+    fs.create("test.txt", "Bartu")
+    fs.write("test.txt", "hello", "Bartu")
+
+    data, latency1 = fs.read("test.txt", "Bartu")  # first read (slow)
+    data, latency2 = fs.read("test.txt", "Bartu")  # second read (fast)
+
+    print(f"First read latency: {latency1}")
+    print(f"Second read latency: {latency2}")
+
+    if latency2 < latency1:
+        print("Cache is working (faster on second read)")
+    else:
+        print("Cache not working properly")
+
 if __name__ == "__main__":
     run_memory_scenario()
     run_filesystem_scenario()
@@ -588,6 +609,10 @@ if __name__ == "__main__":
 
     # ── Week 12: Beyza — Measurement & Under-Stress Testing ────────────────
     run_week12_comparison()
+    # ─────────────────────────────────────────────────────────────────────
+
+    # ── Week 12: Bartu — File System Benchmark ───────────────────────────
+    run_week12_filesystem_benchmark()
     # ─────────────────────────────────────────────────────────────────────
 
     print("\n" + "="*60)
