@@ -151,7 +151,7 @@ class FileSystem:
             if filename in self.cache_queue:
                 self.cache_queue.remove(filename)
             self.cache_queue.append(filename)
-            OSLogger.log("FileSystem", f"Cache HIT on '{filename}' by {process_name}")
+            OSLogger.log("FileSystem", f"Cache HIT on '{filename}' by {process_name} — no I/O block, served from memory")
             self._check_null_corruption(filename, data)
             self._release_lock(filename)
             return data, 0

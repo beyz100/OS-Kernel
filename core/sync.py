@@ -45,6 +45,13 @@ class Mutex:
             return False
 
     def release(self, process, scheduler=None, tick: int | None = None):
+        """Release the mutex.
+
+        If waiters exist, ownership is transferred directly to the next
+        waiter (no intermediate ``locked=False`` state).  This is a
+        *handoff lock* — the waiter is immediately considered the new
+        owner and unblocked by the scheduler.
+        """
         if self.owner != process:
             owner_pid = self.owner.pid if self.owner else None
             OSLogger.log("Mutex", f"Lock '{self.name}' ERROR: PID={process.pid} tried to release but owner is PID={owner_pid}")
