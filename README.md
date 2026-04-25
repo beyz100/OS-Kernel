@@ -1,9 +1,7 @@
-# Mini OS Kernel Simulation
+# OS Kernel Simulation Project
 
-A cooperative/preemptive OS kernel simulator implementing core subsystems:
-**process scheduling** (FIFO & Round-Robin), **paged memory management** with
-clock (second-chance) replacement, **mutex/CV synchronization** with deadlock
-detection, and a **cached file system** with disk-quota enforcement.
+A preemptive OS kernel simulator implementing core subsystems:
+**process scheduling** (FIFO & Round-Robin), **paged memory management** with clock (second-chance) replacement, **mutex/CV synchronization** with deadlock detection, and a **cached file system** with disk-quota enforcement.
 
 ## Quick Start
 

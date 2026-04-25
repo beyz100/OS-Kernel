@@ -577,14 +577,20 @@ def run_week12_filesystem_benchmark():
     fs.create("test.txt", "Bartu")
     fs.write("test.txt", "hello", "Bartu")
 
-    data, latency1 = fs.read("test.txt", "Bartu")  # first read (slow)
-    data, latency2 = fs.read("test.txt", "Bartu")  # second read (fast)
+    # Evict test.txt from cache (cache_size=2) by writing two other files
+    fs.create("evict1.txt", "Bartu")
+    fs.write("evict1.txt", "aaa", "Bartu")
+    fs.create("evict2.txt", "Bartu")
+    fs.write("evict2.txt", "bbb", "Bartu")
 
-    print(f"First read latency: {latency1}")
-    print(f"Second read latency: {latency2}")
+    data, latency1 = fs.read("test.txt", "Bartu")  # cache MISS  → latency=1
+    data, latency2 = fs.read("test.txt", "Bartu")  # cache HIT   → latency=0
+
+    print(f"First read latency:  {latency1}  (expected 1 — cache MISS)")
+    print(f"Second read latency: {latency2}  (expected 0 — cache HIT)")
 
     if latency2 < latency1:
-        print("Cache is working (faster on second read)")
+        print("Cache is working correctly (faster on second read)")
     else:
         print("Cache not working properly")
 
