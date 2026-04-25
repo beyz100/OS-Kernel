@@ -90,17 +90,67 @@ class MemoryManager:
         
         return physical_address
 
+    # ------------------------------------------------------------------
+    # Clock (Second-Chance) page replacement  — Fix #2 & #4
+    # ------------------------------------------------------------------
+    def _find_victim_frame(self, tick: int | None = None) -> int:
+        """Clock (second-chance) page replacement.
+
+        Scans frames starting at ``replacement_pointer``.  If a page's
+        *accessed* bit is set, clear it and move on (second chance).
+        Otherwise the frame is chosen as victim.  Dirty pages incur an
+        extra logged write-back cost.
+        """
+        attempts = 0
+        while attempts < self.total_frames * 2:  # safety limit
+            idx = self.replacement_pointer
+            pid = self.frames[idx]
+
+            if pid is not None and pid in self.page_tables:
+                victim_entry = None
+                for entry in self.page_tables[pid]:
+                    if entry.frame_number == idx:
+                        victim_entry = entry
+                        break
+
+                if victim_entry is not None and victim_entry.accessed:
+                    # Second chance: clear accessed bit, advance pointer
+                    victim_entry.accessed = False
+                    self.replacement_pointer = (self.replacement_pointer + 1) % self.total_frames
+                    attempts += 1
+                    continue
+
+                # Victim found
+                if victim_entry is not None and victim_entry.dirty:
+                    OSLogger.log(
+                        "Memory",
+                        f"DIRTY PAGE write-back: Frame {idx} (PID {pid}) — extra swap cost.",
+                        tick,
+                    )
+                return idx
+            else:
+                # Empty or orphaned frame — use directly
+                return idx
+
+            self.replacement_pointer = (self.replacement_pointer + 1) % self.total_frames
+            attempts += 1
+
+        # Fallback: return current pointer position
+        return self.replacement_pointer
+
     def handle_page_fault(self, pid: int, virtual_address: int, tick: int | None = None) -> bool:
         page_number = virtual_address // self.page_size
         if pid not in self.page_tables or page_number >= len(self.page_tables[pid]):
             return False
-            
+
         page_entry = self.page_tables[pid][page_number]
 
+        # Try to find a free frame first
         target_frame_idx = next((i for i, f in enumerate(self.frames) if f is None), None)
 
         if target_frame_idx is None:
-            target_frame_idx = self.replacement_pointer
+            # No free frame — invoke clock algorithm to pick a victim
+            target_frame_idx = self._find_victim_frame(tick)
             victim_pid = self.frames[target_frame_idx]
 
             if victim_pid is not None and victim_pid in self.page_tables:
@@ -108,7 +158,9 @@ class MemoryManager:
                     if entry.frame_number == target_frame_idx:
                         entry.valid = False
                         entry.frame_number = None
-                        OSLogger.log("Memory", f"EVICTED: Frame {target_frame_idx} (PID {victim_pid}) for new page.",
+                        entry.dirty = False
+                        OSLogger.log("Memory",
+                                     f"EVICTED: Frame {target_frame_idx} (PID {victim_pid}) for new page.",
                                      tick)
                         break
 
@@ -117,6 +169,7 @@ class MemoryManager:
         self.frames[target_frame_idx] = pid
         page_entry.frame_number = target_frame_idx
         page_entry.valid = True
+        page_entry.accessed = True
 
         OSLogger.log("Memory",
                      f"PAGE FETCHED for PID {pid}, Virtual Address {virtual_address} -> Frame {target_frame_idx}", tick)
