@@ -295,7 +295,7 @@ def run_failure_deadlock():
     print("  FAILURE SCENARIO B: DEADLOCK (CIRCULAR WAIT)")
     print("="*70)
 
-    Mutex.global_locks.clear()   # reset registry for this scenario
+    Mutex.reset()   # reset registry for this scenario
 
     clock = Clock()
     scheduler = FIFOScheduler()
@@ -414,7 +414,7 @@ def run_deadlock_scenario():
     print("  SCENARIO 7: DEADLOCK DETECTION & RECOVERY (OS LOOP)")
     print("=" * 60)
 
-    Mutex.global_locks.clear()   # reset registry for this scenario
+    Mutex.reset()   # reset registry for this scenario
 
     clock = Clock()
     scheduler = FIFOScheduler()

@@ -3,6 +3,11 @@ from utils.logger import OSLogger
 class Mutex:
     global_locks = []
 
+    @classmethod
+    def reset(cls):
+        """Clear all registered locks — call between test runs / scenarios."""
+        cls.global_locks.clear()
+
     def __init__(self, name: str):
         self.name = name
         self.locked = False

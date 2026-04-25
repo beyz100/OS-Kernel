@@ -33,12 +33,6 @@ class MemoryManager:
         self.process_memory = {}
 
         OSLogger.log("Memory", f"Initialized: {total_memory} bytes, {self.total_frames} frames, page_size={page_size}")
-
-        self.page_tables = {}
-        
-        self.process_memory = {}
-        
-        OSLogger.log("Memory", f"Initialized: {total_memory} bytes, {self.total_frames} frames, page_size={page_size}")
     
     def allocate(self, pid: int, memory_required: int, tick: int | None = None) -> bool:
         pages_needed = math.ceil(memory_required / self.page_size)

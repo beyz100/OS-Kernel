@@ -97,6 +97,10 @@ class FileSystem:
             OSLogger.log("FileSystem", f"Write FAILED: File '{filename}' not found")
             return False, 0
 
+        if not self._acquire_lock(filename, hash(process_name)):
+            OSLogger.log("FileSystem", f"Write BLOCKED: '{filename}' is locked by another process")
+            return False, 0
+
         file_obj = self.files[filename]
 
         # Block writes to corrupted files
@@ -123,11 +127,16 @@ class FileSystem:
         self.cache[filename] = file_obj.content
 
         OSLogger.log("FileSystem", f"Disk WRITE to '{filename}' by {process_name} (+{len(data)} bytes)")
+        self._release_lock(filename)
         return True, 2
 
     def read(self, filename: str, process_name: str) -> tuple[str | None, int]:
         if filename not in self.files:
             OSLogger.log("FileSystem", f"Read FAILED: File '{filename}' not found")
+            return None, 0
+
+        if not self._acquire_lock(filename, hash(process_name)):
+            OSLogger.log("FileSystem", f"Read BLOCKED: '{filename}' is locked by another process")
             return None, 0
 
         file_obj = self.files[filename]
@@ -144,6 +153,7 @@ class FileSystem:
             self.cache_queue.append(filename)
             OSLogger.log("FileSystem", f"Cache HIT on '{filename}' by {process_name}")
             self._check_null_corruption(filename, data)
+            self._release_lock(filename)
             return data, 0
 
         data = file_obj.content
@@ -151,6 +161,7 @@ class FileSystem:
         self.cache[filename] = data
         OSLogger.log("FileSystem", f"Cache MISS on '{filename}' by {process_name}")
         self._check_null_corruption(filename, data)
+        self._release_lock(filename)
         return data, 1
 
     def _check_null_corruption(self, filename: str, data: str) -> bool:
