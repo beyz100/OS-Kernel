@@ -15,13 +15,24 @@ class OSLogger:
         tag = ""
         msg_upper = message.upper()
         
-        if "PAGE FAULT" in msg_upper or "EVICTED" in msg_upper or "TRAP" in msg_upper or "FETCH" in msg_upper or "DEADLOCK" in msg_upper:
+        if (
+            "PAGE FAULT" in msg_upper
+            or ("EVICTED" in msg_upper and "CACHE" not in msg_upper)
+            or "TRAP" in msg_upper
+            or "FETCH" in msg_upper
+            or "DEADLOCK" in msg_upper
+        ):
             color = OSLogger.COLORS["RED"]
             tag = "[CRITICAL] " if "DEADLOCK" in msg_upper else "[PAGE FAULT] "
         elif "MUTEX" in msg_upper or "ACQUIRE" in msg_upper or "RELEASE" in msg_upper or "CONTENTION" in msg_upper or "LOCK '" in msg_upper:
             color = OSLogger.COLORS["MAGENTA"]
             tag = "[LOCK EVENT] "
-        elif "I/O" in msg_upper or "FILE" in msg_upper and ("LATENCY" in msg_upper or "BYTES" in msg_upper) or "DISK" in msg_upper:
+        elif (
+            "I/O" in msg_upper
+            or "DISK" in msg_upper
+            or "CACHE" in msg_upper
+            or ("FILE" in msg_upper and ("LATENCY" in msg_upper or "BYTES" in msg_upper))
+        ):
             color = OSLogger.COLORS["BLUE"]
             tag = "[I/O EVENT] "
         elif "DISPATCH" in msg_upper or "PREEMPT" in msg_upper or "CONTEXT SWITCH" in msg_upper or "RUNNING" in msg_upper:
