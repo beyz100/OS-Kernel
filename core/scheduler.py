@@ -17,6 +17,7 @@ class FIFOScheduler:
 
     def __init__(self):
         self.ready_queue = deque()
+        self.pending_queue: list[Process] = []   # arrival_time > current tick
         self.current_process = None
         self.io_wait_queue = []
         self.all_processes = {}
@@ -25,6 +26,19 @@ class FIFOScheduler:
     # ------------------------------------------------------------------ queue ops
     def add_process(self, process: Process, tick: int | None = None):
         self.all_processes[process.pid] = process
+        # If we know the current tick and the process hasn't arrived yet,
+        # park it in the pending queue. step() will admit it on the right tick.
+        # When tick is None (legacy / unit-test usage), arrival_time is ignored
+        # and the process is queued immediately.
+        if tick is not None and process.arrival_time > tick:
+            process.state = ProcessState.NEW
+            self.pending_queue.append(process)
+            OSLogger.log(
+                "Scheduler",
+                f"Process PID={process.pid} pending — arrives at tick {process.arrival_time}.",
+                tick,
+            )
+            return
         process.state = ProcessState.READY
         self.ready_queue.append(process)
         OSLogger.log("Scheduler", f"Process PID={process.pid} moved to READY queue.", tick)
@@ -54,6 +68,8 @@ class FIFOScheduler:
         process.state = ProcessState.TERMINATED
         if process in self.ready_queue:
             self.ready_queue.remove(process)
+        if process in self.pending_queue:
+            self.pending_queue.remove(process)
         self.io_wait_queue = [x for x in self.io_wait_queue if x[0] != process]
         if self.current_process == process:
             self.current_process = None
@@ -72,6 +88,7 @@ class FIFOScheduler:
         Calls hook methods that subclasses can override to change
         specific behaviour (preemption, dispatch, execute).
         """
+        self._admit_arrivals(tick)
         self._run_deadlock_check(tick)
         self._tick_io(tick)
         self._release_waiting_cpu(tick)
@@ -131,6 +148,24 @@ class FIFOScheduler:
             )
 
     # ------------------------------------------------------------------ shared helpers
+    def _admit_arrivals(self, tick: int | None = None):
+        """Promote pending processes whose arrival_time has been reached to READY."""
+        if tick is None or not self.pending_queue:
+            return
+        still_pending = []
+        for p in self.pending_queue:
+            if p.arrival_time <= tick:
+                p.state = ProcessState.READY
+                self.ready_queue.append(p)
+                OSLogger.log(
+                    "Scheduler",
+                    f"Process PID={p.pid} arrived (tick={tick}) and moved to READY queue.",
+                    tick,
+                )
+            else:
+                still_pending.append(p)
+        self.pending_queue = still_pending
+
     def _run_deadlock_check(self, tick: int | None = None):
         deadlocked_pids = DeadlockDetector.check_deadlock(Mutex.global_locks)
         if deadlocked_pids:
