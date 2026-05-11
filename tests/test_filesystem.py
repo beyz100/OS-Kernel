@@ -130,9 +130,50 @@ def test_multiple_writes_and_reads():
     fs.write("log.txt", "[START] ", "Logger")
     fs.write("log.txt", "Process A ", "Logger")
     fs.write("log.txt", "Process B", "Logger")
-    
+
     assert fs.get_file_size("log.txt") == 27
-    
+
     data, _ = fs.read("log.txt", "Monitor")
     assert data == "[START] Process A Process B"
 
+
+def test_directory_structure():
+    fs = FileSystem()
+
+    # Root starts empty
+    assert fs.list_dir("/") == []
+
+    # Create a top-level directory
+    assert fs.mkdir("/var") is True
+    assert fs.list_dir("/") == ["var"]
+
+    # Nested directory (parent must exist first)
+    assert fs.mkdir("/var/log") is True
+    assert fs.list_dir("/var") == ["log"]
+
+    # Creating a file inside the nested directory
+    success, _ = fs.create("/var/log/vitals.log", "Monitor")
+    assert success is True
+    assert "vitals.log" in fs.list_dir("/var/log")
+
+    # The flat lookup still works
+    fs.write("/var/log/vitals.log", "HR=80 BP=120", "Monitor")
+    data, _ = fs.read("/var/log/vitals.log", "Monitor")
+    assert data == "HR=80 BP=120"
+
+    # Bare filenames still go to root (backward compatibility)
+    fs.create("readme.txt", "User")
+    assert "readme.txt" in fs.list_dir("/")
+    assert "var" in fs.list_dir("/")
+
+    # Cannot mkdir into a missing parent
+    assert fs.mkdir("/missing/sub") is False
+    # Cannot mkdir over an existing name
+    assert fs.mkdir("/var") is False
+    # Cannot create a file in a missing directory
+    success, _ = fs.create("/missing/x.log", "User")
+    assert success is False
+
+    # Deleting a file removes it from its parent directory listing
+    fs.delete("/var/log/vitals.log", "Monitor")
+    assert "vitals.log" not in fs.list_dir("/var/log")

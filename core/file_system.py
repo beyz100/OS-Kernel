@@ -27,6 +27,23 @@ class File:
         self.corrupted = False
 
 
+class Directory:
+    """A node in the file-system tree. Children are name -> File | Directory."""
+
+    def __init__(self, name: str, parent: "Directory | None" = None):
+        self.name = name
+        self.parent = parent
+        self.children: dict[str, "File | Directory"] = {}
+
+    @property
+    def path(self) -> str:
+        if self.parent is None:
+            return "/"
+        parent_path = self.parent.path
+        sep = "" if parent_path.endswith("/") else "/"
+        return f"{parent_path}{sep}{self.name}"
+
+
 class FileSystem:
 
     def __init__(self, cache_size: int = 3,
@@ -45,8 +62,62 @@ class FileSystem:
         self.block_size = block_size   # bytes per block
         self._used_blocks = 0
 
+        # Hierarchical namespace. Files created with bare names live directly
+        # under root; nested paths are resolved through this tree.
+        self.root = Directory("/")
+
         limit_str = f"{max_blocks} blocks × {block_size} B" if max_blocks else "unlimited"
         OSLogger.log("FileSystem", f"Initialized with cache_size={cache_size}, disk={limit_str}")
+
+    # ------------------------------------------------------------------ paths
+    @staticmethod
+    def _split_path(path: str) -> tuple[list[str], str]:
+        """'/var/log/x.log' -> (['var', 'log'], 'x.log'); 'x.log' -> ([], 'x.log')."""
+        parts = [p for p in path.split("/") if p]
+        if not parts:
+            return [], ""
+        return parts[:-1], parts[-1]
+
+    def _resolve_dir(self, dir_parts: list[str], create_missing: bool = False) -> "Directory | None":
+        cursor = self.root
+        for part in dir_parts:
+            child = cursor.children.get(part)
+            if isinstance(child, Directory):
+                cursor = child
+            elif child is None and create_missing:
+                new_dir = Directory(part, parent=cursor)
+                cursor.children[part] = new_dir
+                cursor = new_dir
+            else:
+                return None
+        return cursor
+
+    # ------------------------------------------------------------------ directories
+    def mkdir(self, path: str) -> bool:
+        dir_parts, name = self._split_path(path)
+        if not name:
+            OSLogger.log("FileSystem", f"mkdir FAILED: invalid path '{path}'")
+            return False
+        parent = self._resolve_dir(dir_parts, create_missing=False)
+        if parent is None:
+            OSLogger.log("FileSystem", f"mkdir FAILED: parent of '{path}' does not exist")
+            return False
+        if name in parent.children:
+            OSLogger.log("FileSystem", f"mkdir FAILED: '{path}' already exists")
+            return False
+        new_dir = Directory(name, parent=parent)
+        parent.children[name] = new_dir
+        OSLogger.log("FileSystem", f"Created directory '{new_dir.path}'")
+        return True
+
+    def list_dir(self, path: str = "/") -> list[str]:
+        if path in ("", "/"):
+            return list(self.root.children.keys())
+        dir_parts, name = self._split_path(path)
+        target = self._resolve_dir(dir_parts + ([name] if name else []), create_missing=False)
+        if target is None:
+            return []
+        return list(target.children.keys())
 
     # ------------------------------------------------------------------ cache
     def _manage_cache(self, filename: str) -> None:
@@ -88,7 +159,21 @@ class FileSystem:
             OSLogger.log("FileSystem", f"Create FAILED: File '{filename}' already exists")
             return False, 0
 
-        self.files[filename] = File(filename, process_name)
+        dir_parts, basename = self._split_path(filename)
+        if not basename:
+            OSLogger.log("FileSystem", f"Create FAILED: invalid filename '{filename}'")
+            return False, 0
+        parent_dir = self._resolve_dir(dir_parts, create_missing=False)
+        if parent_dir is None:
+            OSLogger.log("FileSystem", f"Create FAILED: directory for '{filename}' does not exist")
+            return False, 0
+        if basename in parent_dir.children:
+            OSLogger.log("FileSystem", f"Create FAILED: '{filename}' already exists in directory")
+            return False, 0
+
+        file_obj = File(basename, process_name)
+        self.files[filename] = file_obj
+        parent_dir.children[basename] = file_obj
         OSLogger.log("FileSystem", f"Created file '{filename}' (Owner: {process_name})")
         return True, 1
 
@@ -201,6 +286,12 @@ class FileSystem:
             return False
 
         del self.files[filename]
+
+        # Remove the file from its parent directory's children
+        dir_parts, basename = self._split_path(filename)
+        parent_dir = self._resolve_dir(dir_parts, create_missing=False)
+        if parent_dir is not None and basename in parent_dir.children:
+            del parent_dir.children[basename]
 
         if filename in self.cache:
             del self.cache[filename]
