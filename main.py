@@ -349,39 +349,40 @@ def run_failure_disk_full():
     print("="*70)
 
     clock = Clock()
-    MAX_BLOCKS = 50
-    fs = FileSystem(cache_size=2)
+    # 5 blocks × 10 bytes = 50 bytes total disk capacity, enforced by FileSystem itself.
+    fs = FileSystem(cache_size=2, max_blocks=5, block_size=10)
+    capacity_bytes = fs.max_blocks * fs.block_size
 
-    OSLogger.log("Failure", f"Starting Disk Full test. Disk capacity: {MAX_BLOCKS} bytes.", clock.current_tick)
+    OSLogger.log("Failure", f"Starting Disk Full test. Disk capacity: {capacity_bytes} bytes.", clock.current_tick)
 
-    total_written = 0
     file_index = 0
-
-    while total_written + 10 <= MAX_BLOCKS:
+    while True:
         fname = f"file_{file_index}.dat"
         fs.create(fname, "KernelWriter")
         ok, _ = fs.write(fname, "A" * 10, "KernelWriter")
-        if ok:
-            total_written += 10
+        if not ok:
+            used = fs.get_stats()["used_blocks"] * fs.block_size
             OSLogger.log("Failure",
-                         f"Written 10 bytes to '{fname}'. Total on disk: {total_written}/{MAX_BLOCKS} bytes.",
+                         f"Write to '{fname}' rejected by FS quota at {used}/{capacity_bytes} bytes — disk is full.",
                          clock.current_tick)
+            break
+        used = fs.get_stats()["used_blocks"] * fs.block_size
+        OSLogger.log("Failure",
+                     f"Written 10 bytes to '{fname}'. Total on disk: {used}/{capacity_bytes} bytes.",
+                     clock.current_tick)
         file_index += 1
         clock.tick()
 
     overflow_file = "overflow.dat"
     fs.create(overflow_file, "KernelWriter")
     OSLogger.log("Failure",
-                 f"Disk is full ({total_written}/{MAX_BLOCKS} bytes). "
-                 "Attempting overflow write — OS must reject gracefully.",
+                 "Attempting overflow write to 'overflow.dat' — FS must reject gracefully.",
                  clock.current_tick)
-    if total_written >= MAX_BLOCKS:
+    ok, _ = fs.write(overflow_file, "OVERFLOW", "KernelWriter")
+    if not ok:
         OSLogger.log("Failure",
-                     "DISK FULL: Write to 'overflow.dat' rejected. "
-                     "No data written. OS loop stable.",
+                     "DISK FULL: Write to 'overflow.dat' rejected by quota. No data written. OS loop stable.",
                      clock.current_tick)
-    else:
-        fs.write(overflow_file, "OVERFLOW", "KernelWriter")
     clock.tick()
 
     corrupt_file = "corrupt.dat"
