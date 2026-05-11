@@ -4,7 +4,6 @@ from core.memory import MemoryManager, PageFaultTrap
 from core.process import Process, ProcessState
 from core.scheduler import FIFOScheduler, RRScheduler
 from core.sync import Mutex
-from core.deadlock import DeadlockDetector
 from utils.clock import Clock
 from utils.logger import OSLogger
 
@@ -111,26 +110,44 @@ def run_producer_consumer_scenario():
     print("\n" + "="*70)
     print("  SCENARIO 3: PRODUCER-CONSUMER (SYNCHRONIZATION)")
     print("="*70)
-    
+
+    Mutex.reset()  # isolate this scenario's locks from earlier ones
+
     clock = Clock()
     buffer = BoundedBuffer(capacity=2)
-    
     scheduler = FIFOScheduler()
-    p1 = Process(pid=1, arrival_time=0, burst_time=5)
-    p2 = Process(pid=2, arrival_time=0, burst_time=5)
-    
-    OSLogger.log("System", "Starting Producer-Consumer interaction...", clock.current_tick)
-    
-    buffer.produce(process=p1, item="O2_Level=21%", scheduler=scheduler, tick=clock.current_tick)
+
+    producer = Process(pid=1, arrival_time=0, burst_time=5, name="Producer")
+    consumer = Process(pid=2, arrival_time=0, burst_time=5, name="Consumer")
+    scheduler.add_process(producer, clock.current_tick)
+    scheduler.add_process(consumer, clock.current_tick)
+
+    OSLogger.log("System", "Starting Producer-Consumer interaction (buffer capacity=2)...", clock.current_tick)
+
+    # Producer fills the buffer to capacity.
+    buffer.produce(producer, "O2_Level=21%", scheduler, clock.current_tick)
     clock.tick()
-    
-    buffer.produce(process=p1, item="O2_Level=20%", scheduler=scheduler, tick=clock.current_tick)
+    buffer.produce(producer, "O2_Level=20%", scheduler, clock.current_tick)
     clock.tick()
-    
-    buffer.produce(process=p1, item="O2_Level=19%", scheduler=scheduler, tick=clock.current_tick)
+
+    # Next produce hits the FULL condition and blocks the producer on not_full.
+    OSLogger.log("System", "Buffer full — producer's next call should block on not_full CV.", clock.current_tick)
+    buffer.produce(producer, "O2_Level=19%", scheduler, clock.current_tick)
     clock.tick()
-    
-    buffer.consume(process=p2, scheduler=scheduler, tick=clock.current_tick)
+
+    # Consumer drains one slot; signalling not_full wakes the producer.
+    buffer.consume(consumer, scheduler, clock.current_tick)
+    clock.tick()
+
+    # Producer is READY again and retries the deferred produce.
+    OSLogger.log("System", "Producer woke from not_full; retrying the deferred produce.", clock.current_tick)
+    buffer.produce(producer, "O2_Level=19%", scheduler, clock.current_tick)
+    clock.tick()
+
+    # Consumer drains the remaining items.
+    buffer.consume(consumer, scheduler, clock.current_tick)
+    clock.tick()
+    buffer.consume(consumer, scheduler, clock.current_tick)
     clock.tick()
 
 
@@ -323,20 +340,25 @@ def run_failure_deadlock():
     lock_X.acquire(p2, scheduler, clock.current_tick)
     clock.tick()
 
-    deadlocked = DeadlockDetector.check_deadlock(Mutex.global_locks)
+    OSLogger.log(
+        "Failure",
+        "Triggering scheduler tick — the per-step deadlock check will detect "
+        "the cycle, terminate a victim, and release its locks automatically.",
+        clock.current_tick,
+    )
+    scheduler.step(clock.current_tick)
+    clock.tick()
 
-    if deadlocked:
-        OSLogger.log("Failure",
-                     f"DEADLOCK CONFIRMED for PIDs {deadlocked}. "
-                     "OS recovery: releasing all locks held by victim PID=10.",
-                     clock.current_tick)
-        lock_X.owner = p1
-        lock_X.release(p1, scheduler, clock.current_tick)
-        scheduler.unblock_process(p2, clock.current_tick)
-        OSLogger.log("Failure", "Deadlock resolved. PID=20 unblocked and can now proceed.", clock.current_tick)
-    else:
-        OSLogger.log("Failure", "No deadlock detected (unexpected).", clock.current_tick)
-
+    survivor = next(
+        (p for p in (p1, p2) if p.state != ProcessState.TERMINATED),
+        None,
+    )
+    if survivor is not None:
+        OSLogger.log(
+            "Failure",
+            f"Deadlock resolved by auto-recovery. PID={survivor.pid} survived and can proceed.",
+            clock.current_tick,
+        )
     OSLogger.log("Failure", "Deadlock scenario complete. Main OS loop continues normally.", clock.current_tick)
 
 
@@ -440,19 +462,9 @@ def run_deadlock_scenario():
     m2.acquire(p1, scheduler, clock.current_tick)
     m1.acquire(p2, scheduler, clock.current_tick)
 
-    # Deadlock detection using global_locks registry
-    deadlocked = DeadlockDetector.check_deadlock(Mutex.global_locks)
-
-    if deadlocked:
-        OSLogger.log("Scheduler",
-                     f"DEADLOCK DETECTED for PIDs {deadlocked}. "
-                     "Recovering: releasing Resource_A from victim PID=401.",
-                     clock.current_tick)
-        m1.owner = p1
-        m1.release(p1, scheduler, clock.current_tick)
-        scheduler.unblock_process(p2, clock.current_tick)
-        OSLogger.log("Scheduler", "Recovery complete. Continuing OS loop.", clock.current_tick)
-
+    # The scheduler's per-tick _run_deadlock_check will detect the cycle on
+    # the next step(), terminate a victim, release its locks, and let the
+    # survivor proceed — no manual recovery needed here.
     for _ in range(5):
         scheduler.step(clock.current_tick)
         clock.tick()
