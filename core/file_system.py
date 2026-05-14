@@ -57,13 +57,12 @@ class FileSystem:
 
         self.file_locks = {}
 
-        # Disk-quota support (Bartu integration)
-        self.max_blocks = max_blocks   # None = unlimited
-        self.block_size = block_size   # bytes per block
+ 
+        self.max_blocks = max_blocks  
+        self.block_size = block_size   
         self._used_blocks = 0
 
-        # Hierarchical namespace. Files created with bare names live directly
-        # under root; nested paths are resolved through this tree.
+
         self.root = Directory("/")
 
         limit_str = f"{max_blocks} blocks × {block_size} B" if max_blocks else "unlimited"
@@ -188,12 +187,10 @@ class FileSystem:
 
         file_obj = self.files[filename]
 
-        # Block writes to corrupted files
         if file_obj.corrupted:
             OSLogger.log("FileSystem", f"Write BLOCKED: '{filename}' is corrupted")
             return False, 0
 
-        # Enforce disk-block quota when max_blocks is set
         if self.max_blocks is not None:
             blocks_needed = math.ceil(len(data) / self.block_size)
             if self._used_blocks + blocks_needed > self.max_blocks:
@@ -226,7 +223,6 @@ class FileSystem:
 
         file_obj = self.files[filename]
 
-        # Corrupted flag set by corrupt_file()
         if file_obj.corrupted:
             OSLogger.log("FileSystem", f"CORRUPTED FILE: '{filename}' cannot be read (marked corrupted).")
             return None, 0
@@ -267,7 +263,6 @@ class FileSystem:
 
         file_obj = self.files[filename]
         file_obj.corrupted = True
-        # Also inject null bytes so null-byte detection path is hit too
         size = max(file_obj.size, 1)
         file_obj.content = "\x00" * size
 
@@ -287,7 +282,6 @@ class FileSystem:
 
         del self.files[filename]
 
-        # Remove the file from its parent directory's children
         dir_parts, basename = self._split_path(filename)
         parent_dir = self._resolve_dir(dir_parts, create_missing=False)
         if parent_dir is not None and basename in parent_dir.children:

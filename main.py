@@ -111,7 +111,7 @@ def run_producer_consumer_scenario():
     print("  SCENARIO 3: PRODUCER-CONSUMER (SYNCHRONIZATION)")
     print("="*70)
 
-    Mutex.reset()  # isolate this scenario's locks from earlier ones
+    Mutex.reset()  
 
     clock = Clock()
     buffer = BoundedBuffer(capacity=2)
@@ -124,27 +124,22 @@ def run_producer_consumer_scenario():
 
     OSLogger.log("System", "Starting Producer-Consumer interaction (buffer capacity=2)...", clock.current_tick)
 
-    # Producer fills the buffer to capacity.
     buffer.produce(producer, "O2_Level=21%", scheduler, clock.current_tick)
     clock.tick()
     buffer.produce(producer, "O2_Level=20%", scheduler, clock.current_tick)
     clock.tick()
 
-    # Next produce hits the FULL condition and blocks the producer on not_full.
     OSLogger.log("System", "Buffer full — producer's next call should block on not_full CV.", clock.current_tick)
     buffer.produce(producer, "O2_Level=19%", scheduler, clock.current_tick)
     clock.tick()
 
-    # Consumer drains one slot; signalling not_full wakes the producer.
     buffer.consume(consumer, scheduler, clock.current_tick)
     clock.tick()
 
-    # Producer is READY again and retries the deferred produce.
     OSLogger.log("System", "Producer woke from not_full; retrying the deferred produce.", clock.current_tick)
     buffer.produce(producer, "O2_Level=19%", scheduler, clock.current_tick)
     clock.tick()
 
-    # Consumer drains the remaining items.
     buffer.consume(consumer, scheduler, clock.current_tick)
     clock.tick()
     buffer.consume(consumer, scheduler, clock.current_tick)
@@ -248,7 +243,6 @@ def run_cross_component_interaction2():
     scheduler.add_process(p1, clock.current_tick)
     scheduler.add_process(p2, clock.current_tick)
     
-    # Tick 1: P1 runs
     scheduler.step(clock.current_tick)
     clock.tick()
     
@@ -312,7 +306,7 @@ def run_failure_deadlock():
     print("  FAILURE SCENARIO B: DEADLOCK (CIRCULAR WAIT)")
     print("="*70)
 
-    Mutex.reset()   # reset registry for this scenario
+    Mutex.reset()  
 
     clock = Clock()
     scheduler = FIFOScheduler()
@@ -371,7 +365,6 @@ def run_failure_disk_full():
     print("="*70)
 
     clock = Clock()
-    # 5 blocks × 10 bytes = 50 bytes total disk capacity, enforced by FileSystem itself.
     fs = FileSystem(cache_size=2, max_blocks=5, block_size=10)
     capacity_bytes = fs.max_blocks * fs.block_size
 
@@ -437,7 +430,7 @@ def run_deadlock_scenario():
     print("  SCENARIO 7: DEADLOCK DETECTION & RECOVERY (OS LOOP)")
     print("=" * 60)
 
-    Mutex.reset()   # reset registry for this scenario
+    Mutex.reset()   
 
     clock = Clock()
     scheduler = FIFOScheduler()
@@ -462,9 +455,6 @@ def run_deadlock_scenario():
     m2.acquire(p1, scheduler, clock.current_tick)
     m1.acquire(p2, scheduler, clock.current_tick)
 
-    # The scheduler's per-tick _run_deadlock_check will detect the cycle on
-    # the next step(), terminate a victim, release its locks, and let the
-    # survivor proceed — no manual recovery needed here.
     for _ in range(5):
         scheduler.step(clock.current_tick)
         clock.tick()
@@ -479,7 +469,6 @@ def run_filesystem_failure_scenario():
     print("  SCENARIO 8: ENGINEERING CHALLENGE (DISK FULL + CORRUPTION)")
     print("=" * 60)
 
-    # max_blocks=3, block_size=10 → max capacity = 30 bytes
     fs = FileSystem(cache_size=2, max_blocks=3, block_size=10)
 
     print("\nCreating files...")
@@ -487,12 +476,12 @@ def run_filesystem_failure_scenario():
     fs.create("backup.txt", "P2")
 
     print("\nFilling disk...")
-    fs.write("report.txt", "1234567890", "P1")   # block 1
-    fs.write("report.txt", "abcdefghij", "P1")   # block 2
-    fs.write("backup.txt", "KLMNOPQRST", "P2")   # block 3 — disk full
+    fs.write("report.txt", "1234567890", "P1")
+    fs.write("report.txt", "abcdefghij", "P1")
+    fs.write("backup.txt", "KLMNOPQRST", "P2")
 
     print("\nTrigger disk full...")
-    fs.write("backup.txt", "OVERFLOW", "P2")      # rejected
+    fs.write("backup.txt", "OVERFLOW", "P2")
 
     print("\nCorrupt file...")
     fs.corrupt_file("report.txt")
@@ -518,7 +507,6 @@ def _run_stress_test(scheduler_class, scheduler_name, time_quantum=None):
     print(f"  WEEK 12: STRESS TEST WITH {scheduler_name}")
     print("="*60)
     
-    # Must reset global locks for isolated scenario
     Mutex.global_locks.clear()
 
     clock = Clock()
@@ -590,14 +578,13 @@ def run_week12_filesystem_benchmark():
     fs.create("test.txt", "Bartu")
     fs.write("test.txt", "hello", "Bartu")
 
-    # Evict test.txt from cache (cache_size=2) by writing two other files
     fs.create("evict1.txt", "Bartu")
     fs.write("evict1.txt", "aaa", "Bartu")
     fs.create("evict2.txt", "Bartu")
     fs.write("evict2.txt", "bbb", "Bartu")
 
-    data, latency1 = fs.read("test.txt", "Bartu")  # cache MISS  → latency=1
-    data, latency2 = fs.read("test.txt", "Bartu")  # cache HIT   → latency=0
+    data, latency1 = fs.read("test.txt", "Bartu")
+    data, latency2 = fs.read("test.txt", "Bartu")
 
     print(f"First read latency:  {latency1}  (expected 1 — cache MISS)")
     print(f"Second read latency: {latency2}  (expected 0 — cache HIT)")
@@ -615,22 +602,22 @@ if __name__ == "__main__":
     run_cross_component_interaction()
     run_cross_component_interaction2()
 
-    # ── Week 11: Armita — Controlled Failure Scenarios ────────────────────
+    # ── Controlled Failure Scenarios ────────────────────
     run_failure_oom()
     run_failure_deadlock()
     run_failure_disk_full()
     # ─────────────────────────────────────────────────────────────────────
 
-    # ── Week 11: Beyza + Bartu integration scenarios ──────────────────────
+    # ── Integration scenarios ──────────────────────
     run_deadlock_scenario()
     run_filesystem_failure_scenario()
     # ─────────────────────────────────────────────────────────────────────
 
-    # ── Week 12: Beyza — Measurement & Under-Stress Testing ────────────────
+    # ── Measurement & Under-Stress Testing ────────────────
     run_week12_comparison()
     # ─────────────────────────────────────────────────────────────────────
 
-    # ── Week 12: Bartu — File System Benchmark ───────────────────────────
+    # ── File System Benchmark ───────────────────────────
     run_week12_filesystem_benchmark()
     # ─────────────────────────────────────────────────────────────────────
 

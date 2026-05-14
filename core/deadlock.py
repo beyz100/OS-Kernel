@@ -9,7 +9,7 @@ class DeadlockDetector:
         waiter_pid → owner_pid.  A process may wait on multiple
         locks, so the graph is dict[int, list[int]].
         """
-        # Build adjacency list: waiter_pid → [owner_pids...]
+
         wait_for_graph: dict[int, list[int]] = {}
 
         for lock in locks:
@@ -17,12 +17,10 @@ class DeadlockDetector:
                 for waiter in lock.wait_queue:
                     wait_for_graph.setdefault(waiter.pid, []).append(lock.owner.pid)
 
-        # DFS cycle detection
         deadlocked_pids: set[int] = set()
 
         def dfs(node: int, path: list[int], visited: set[int]) -> None:
             if node in path:
-                # Cycle found — all nodes from cycle start onward are deadlocked
                 cycle_start = path.index(node)
                 deadlocked_pids.update(path[cycle_start:])
                 return

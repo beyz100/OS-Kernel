@@ -11,14 +11,11 @@ class Mutex:
     def __init__(self, name: str):
         self.name = name
         self.locked = False
-        self.owner = None        # Process object (or None)
-        self.wait_queue = []     # list of Process objects waiting
+        self.owner = None        
+        self.wait_queue = []     
         Mutex.global_locks.append(self)
 
-    # ------------------------------------------------------------------
-    # Compatibility shim for DeadlockDetector.check_deadlock(), which
-    # expects lock.owner_pid (int|None) and lock.wait_queue of PIDs.
-    # ------------------------------------------------------------------
+
     @property
     def owner_pid(self) -> int | None:
         """Return the PID of the current owner, or None."""

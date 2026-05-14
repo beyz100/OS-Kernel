@@ -1,8 +1,8 @@
 from collections import deque
 
 from core.process import Process, ProcessState
-from core.sync import Mutex                       # Fix #11: top-level import
-from core.deadlock import DeadlockDetector        # Fix #11: top-level import
+from core.sync import Mutex                      
+from core.deadlock import DeadlockDetector        
 from utils.logger import OSLogger
 
 
@@ -17,7 +17,7 @@ class FIFOScheduler:
 
     def __init__(self):
         self.ready_queue = deque()
-        self.pending_queue: list[Process] = []   # arrival_time > current tick
+        self.pending_queue: list[Process] = []   
         self.current_process = None
         self.io_wait_queue = []
         self.all_processes = {}
@@ -26,10 +26,7 @@ class FIFOScheduler:
     # ------------------------------------------------------------------ queue ops
     def add_process(self, process: Process, tick: int | None = None):
         self.all_processes[process.pid] = process
-        # If we know the current tick and the process hasn't arrived yet,
-        # park it in the pending queue. step() will admit it on the right tick.
-        # When tick is None (legacy / unit-test usage), arrival_time is ignored
-        # and the process is queued immediately.
+       
         if tick is not None and process.arrival_time > tick:
             process.state = ProcessState.NEW
             self.pending_queue.append(process)
@@ -74,14 +71,14 @@ class FIFOScheduler:
         if self.current_process == process:
             self.current_process = None
 
-        for lock in list(Mutex.global_locks):  # Fix #17: iterate over copy for safety
+        for lock in list(Mutex.global_locks):  
             if lock.owner == process:
                 lock.release(process, self, tick)
             if process in lock.wait_queue:
                 lock.wait_queue.remove(process)
         OSLogger.log("Scheduler", f"Process PID={pid} forcefully TERMINATED. Locks released.", tick)
 
-    # ================================================================== step()
+
     def step(self, tick: int | None = None):
         """Single scheduler tick — Template Method.
 
@@ -107,7 +104,7 @@ class FIFOScheduler:
         self._check_termination(tick)
         return self.current_process
 
-    # ------------------------------------------------------------------ hooks
+ 
     def _should_preempt(self) -> bool:
         """Override in preemptive schedulers."""
         return False
@@ -147,7 +144,7 @@ class FIFOScheduler:
                 tick,
             )
 
-    # ------------------------------------------------------------------ shared helpers
+  
     def _admit_arrivals(self, tick: int | None = None):
         """Promote pending processes whose arrival_time has been reached to READY."""
         if tick is None or not self.pending_queue:
@@ -187,7 +184,6 @@ class FIFOScheduler:
                 completed.add(item[0])
         for p in completed:
             self.unblock_process(p, tick)
-        # Single rebuild instead of one per completed process
         self.io_wait_queue = [x for x in self.io_wait_queue if x[0] not in completed]
 
     def _release_waiting_cpu(self, tick: int | None = None):

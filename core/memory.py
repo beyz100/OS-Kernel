@@ -114,13 +114,13 @@ class MemoryManager:
                         break
 
                 if victim_entry is not None and victim_entry.accessed:
-                    # Second chance: clear accessed bit, advance pointer
+                
                     victim_entry.accessed = False
                     self.replacement_pointer = (self.replacement_pointer + 1) % self.total_frames
                     attempts += 1
                     continue
 
-                # Victim found
+               
                 if victim_entry is not None and victim_entry.dirty:
                     OSLogger.log(
                         "Memory",
@@ -129,13 +129,13 @@ class MemoryManager:
                     )
                 return idx
             else:
-                # Empty or orphaned frame — use directly
+                
                 return idx
 
             self.replacement_pointer = (self.replacement_pointer + 1) % self.total_frames
             attempts += 1
 
-        # Fallback: return current pointer position
+     
         return self.replacement_pointer
 
     def handle_page_fault(self, pid: int, virtual_address: int, tick: int | None = None) -> bool:
