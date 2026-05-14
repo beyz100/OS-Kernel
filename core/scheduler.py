@@ -23,7 +23,7 @@ class FIFOScheduler:
         self.all_processes = {}
         self.context_switches = 0
 
-    # ------------------------------------------------------------------ queue ops
+
     def add_process(self, process: Process, tick: int | None = None):
         self.all_processes[process.pid] = process
        

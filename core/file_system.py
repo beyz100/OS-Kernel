@@ -68,7 +68,7 @@ class FileSystem:
         limit_str = f"{max_blocks} blocks × {block_size} B" if max_blocks else "unlimited"
         OSLogger.log("FileSystem", f"Initialized with cache_size={cache_size}, disk={limit_str}")
 
-    # ------------------------------------------------------------------ paths
+
     @staticmethod
     def _split_path(path: str) -> tuple[list[str], str]:
         """'/var/log/x.log' -> (['var', 'log'], 'x.log'); 'x.log' -> ([], 'x.log')."""
@@ -91,7 +91,7 @@ class FileSystem:
                 return None
         return cursor
 
-    # ------------------------------------------------------------------ directories
+
     def mkdir(self, path: str) -> bool:
         dir_parts, name = self._split_path(path)
         if not name:
@@ -118,7 +118,7 @@ class FileSystem:
             return []
         return list(target.children.keys())
 
-    # ------------------------------------------------------------------ cache
+  
     def _manage_cache(self, filename: str) -> None:
         if filename in self.cache_queue:
             self.cache_queue.remove(filename)
@@ -132,7 +132,7 @@ class FileSystem:
 
         self.cache_queue.append(filename)
 
-    # ------------------------------------------------------------------ locks
+
     def _acquire_lock(self, filename: str, process_id: int) -> bool:
         if filename in self.file_locks and self.file_locks[filename] != process_id:
             return False
@@ -143,7 +143,7 @@ class FileSystem:
         if filename in self.file_locks:
             del self.file_locks[filename]
 
-    # ------------------------------------------------------------------ blocks
+
     def _blocks_needed(self, size: int) -> int:
         if size == 0:
             return 0
@@ -152,7 +152,7 @@ class FileSystem:
     def _recalculate_used_blocks(self) -> None:
         self._used_blocks = sum(self._blocks_needed(f.size) for f in self.files.values())
 
-    # ------------------------------------------------------------------ CRUD
+
     def create(self, filename: str, process_name: str) -> tuple[bool, int]:
         if filename in self.files:
             OSLogger.log("FileSystem", f"Create FAILED: File '{filename}' already exists")

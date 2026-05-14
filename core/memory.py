@@ -90,9 +90,7 @@ class MemoryManager:
         
         return physical_address
 
-    # ------------------------------------------------------------------
-    # Clock (Second-Chance) page replacement  — Fix #2 & #4
-    # ------------------------------------------------------------------
+
     def _find_victim_frame(self, tick: int | None = None) -> int:
         """Clock (second-chance) page replacement.
 
@@ -102,7 +100,7 @@ class MemoryManager:
         extra logged write-back cost.
         """
         attempts = 0
-        while attempts < self.total_frames * 2:  # safety limit
+        while attempts < self.total_frames * 2: 
             idx = self.replacement_pointer
             pid = self.frames[idx]
 
@@ -145,11 +143,10 @@ class MemoryManager:
 
         page_entry = self.page_tables[pid][page_number]
 
-        # Try to find a free frame first
+      
         target_frame_idx = next((i for i, f in enumerate(self.frames) if f is None), None)
 
         if target_frame_idx is None:
-            # No free frame — invoke clock algorithm to pick a victim
             target_frame_idx = self._find_victim_frame(tick)
             victim_pid = self.frames[target_frame_idx]
 
